@@ -1,6 +1,6 @@
 program matrixsolve3
 
-  ! mpif90 -framework Accelerate -o ms3.o matrixsolve3.f90
+  ! mpif90 -framework Accelerate -o p3.o matrixsolve3.f90
   use mpi
 
   ! Lapack read from Netlib

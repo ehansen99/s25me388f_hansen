@@ -3,7 +3,7 @@ program matrixsolve4
   ! Link to LAPACK
   ! On my machine I had to link to the Apple installed framework
   ! To link I referenced Stack Overflow
-  ! mpif90 -framework Accelerate -o ms4.o matrixsolve4.f90
+  ! mpif90 -framework Accelerate -o p4.o matrixsolve4.f90
 
   use mpi
 

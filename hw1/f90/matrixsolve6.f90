@@ -1,6 +1,6 @@
 program matrixsolve6
 
-  ! mpif90 -framework Accelerate -o ms6.o matrixsolve6.f90
+  ! mpif90 -framework Accelerate -o p6.o matrixsolve6.f90
   use mpi
 
   ! Lapack read from Netlib
@@ -50,9 +50,6 @@ program matrixsolve6
      
   enddo
 
-  ! Perhaps at a future date I could apply a superfast
-  ! Toeplitz algorithm e.g. https://doi.org/10.1016/0196-6774(80)90013-9
-  
   ! Full matrix routine
 
   print *, "a and b assigned"

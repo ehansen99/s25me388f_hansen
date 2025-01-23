@@ -1,6 +1,6 @@
 program matrixsolve2
 
-  ! mpif90 -framework Accelerate -o ms2.o matrixsolve2.f90
+  ! mpif90 -framework Accelerate -o p2.o matrixsolve2.f90
   use mpi
 
   ! Lapack read from Netlib

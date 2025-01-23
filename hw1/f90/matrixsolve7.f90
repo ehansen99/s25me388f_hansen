@@ -3,7 +3,7 @@ program matrixsolve7
   ! Link to LAPACK
   ! On my machine I had to link to the Apple installed framework
   ! To link I referenced Stack Overflow
-  ! mpif90 -framework Accelerate -o ms7.o matrixsolve7.f90
+  ! mpif90 -framework Accelerate -o p7.o matrixsolve7.f90
 
   use mpi
 
@@ -47,9 +47,19 @@ program matrixsolve7
   
   CALL dgtsv(n,1,sub,diag,sup,b,n,info)
   t2 = MPI_WTIME()
-  
+
+  ! For n = 100 output for end of assignment
   print *, "Time",t2-t1
-  if (n.eq.10) print *, b
+  if (n.eq.100) then
+     print *, "Writing"
+     OPEN(unit=100,access="sequential",file="xout.csv",action="write",form="formatted",status="replace")
+     do i = 1,n
+        write(100,*) b(i,1),","
+     enddo
+     CLOSE(100)
+  endif
+  
+     
   
   print *, "LAPACK info",info
 
