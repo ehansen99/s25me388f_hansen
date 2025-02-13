@@ -7,12 +7,13 @@ Created on Mon Feb 10 19:43:09 2025
 """
 
 import numpy as np
+from numpy import format_float_positional as ff
 from scipy.linalg import solve_banded
 from scipy.special import roots_legendre
 import matplotlib.pyplot as plt
 
 class Ordinate1DSolver:
-    def __init__(self,sigmas0,sigmat=1,q0=1,Nx=10,Nmu=2,boundary=0,timer=False):
+    def __init__(self,sigmas0,sigmat=1,q0=1,Nx=10,Nmu=2,boundary=0,timer=False,sname=0,fname="p2"):
         """
 
         Parameters
@@ -44,6 +45,8 @@ class Ordinate1DSolver:
         self.Nmu = Nmu
         self.boundary  = boundary
         self.timer = timer
+        self.sname = sname
+        self.fname = fname
         
         if self.Nmu % 2 == 1:
             print("Must use an even number of ordinates")
@@ -186,8 +189,10 @@ class Ordinate1DSolver:
         plt.plot(self.xleft,self.moment[self.Nmu-1::self.Nmu],"b8",label="Most Positive Angular Flux")
         plt.xlabel("Position (cm)")
         plt.ylabel("Flux")
-        plt.title("Scalar and Angular Fluxes")
-        plt.savefig("ordinatefluxes"+str(self.boundary)+str(int(self.q0)))
+        plt.title("Scalar and Angular Fluxes Scattering "+ff(self.sigmas0,5))
+        plt.legend()
+        plt.savefig(self.fname+"ordfluxes"+str(self.boundary)+str(int(self.q0))+str(self.sname)+str(self.Nx))
+        plt.close()
         
     def solve(self):
                 
@@ -213,3 +218,4 @@ class Ordinate1DSolver:
             self.it += 1
         if not self.timer:
             self.plotscalarflux()
+            

@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 
 
 sigmat = 1.0
-sigmas = 0.9
+sigmas = 0.8
 length = 100
 Nx = 10
 dx = length/Nx
@@ -87,6 +87,53 @@ while np.amax(np.abs(scalarflux-oldflux)) > 10**(-10):
     print("Iteration ",i," Difference ", np.amax(np.abs(scalarflux-oldflux)))
     i += 1 
     
+plt.plot(np.arange(0,Nx+1)*length/Nx,x[0::2],"r",label="Scalar Flux")
+plt.plot(np.arange(0,Nx+1)*length/Nx,x[1::2],"b",label="Current")
+
+plt.xlabel("x position (cm)")
+plt.title("Moments of Angular Flux")
+if np.amax(scalarflux < 3):
+    plt.ylim(-3,3)
+plt.ylabel("Moment")
+plt.legend()
+plt.show()
+
+# Repeat the problem but banded
+
+b[0] = 0
+b[-1] = 0
+b[Nmu//2:-Nmu//2:Nmu ] = q0
+
+AB = np.zeros([Nmu+3,(Nx+1)*Nmu])
+
+# Reflecting boundary conditions - set current to zero
+AB[Nmu-1,1] = 1
+AB[Nmu,-1] = 1
+
+# Set up equations - read from printed array above
+for i in range(Nx):
+    print(1+(i+1)*Nmu,1+(i+2)*Nmu)
+    AB[0,2+2*i:2+2*(i+1)] = np.array([0,1/dx])
+    AB[1,2+2*i:2+2*(i+1)] = np.array([sigmat/2,sigmat/2])
+    AB[2,1+2*i:1+2*(i+1)] = np.array([-1/dx,1/(3*dx)])
+    AB[3,i*Nmu:(i+1)*Nmu] = np.array([sigmat/2,sigmat/2])
+    AB[4,i*Nmu:(i+1)*Nmu] = np.array([-1/(3*dx),0])
+
+print(AB)
+
+scalarflux = 0.0*scalarflux
+oldflux = scalarflux.copy()-99
+while np.amax(np.abs(scalarflux-oldflux)) > 10**(-10):
+    oldflux = scalarflux
+    x = solve_banded((2,2),AB,b)
+    
+    scalarflux = update_scalarflux(x)
+    b[1:-1:2] = q0 + sigmas*scalarflux
+    b[2:-1:2] = 0
+    
+    print("Iteration ",i," Difference ", np.amax(np.abs(scalarflux-oldflux)))
+    i += 1 
+
 plt.plot(np.arange(0,Nx+1)*length/Nx,x[0::2],"r",label="Scalar Flux")
 plt.plot(np.arange(0,Nx+1)*length/Nx,x[1::2],"b",label="Current")
 
