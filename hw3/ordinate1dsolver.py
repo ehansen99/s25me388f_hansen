@@ -63,7 +63,6 @@ class Ordinate1DSolver:
         
         self.scalarflux = np.zeros(self.Nx,dtype="float64")
         self.oldflux = -99+self.scalarflux.copy()
-        self.oldflux2 = -31+self.scalarflux.copy()
         
         self.source = np.zeros((self.Nx+1)*(self.Nmu),dtype="float64")
         
@@ -138,12 +137,6 @@ class Ordinate1DSolver:
     def incidentvacuum_boundaries(self):
         """
         Sets incident and vacuum boundary conditions for the matrix and RHS.
-        
-        
-        
-        Marchuk boundary conditions are used for spherical harmonics.
-        See Exnihilo manual page 22 and Mathematica notebook for details.
-
         Returns
         -------
         None.
@@ -172,6 +165,7 @@ class Ordinate1DSolver:
         
         self.oldflux = self.scalarflux.copy()
         vector = np.zeros(self.Nx+1)
+        # Integrate with Gaussian quadrature and average
         for i in range(0,self.Nx+1):
             vector[i] = np.dot(self.moment[i*self.Nmu:(i+1)*self.Nmu],self.weights)
         self.scalarflux= (vector[:-1]+vector[1:])/2

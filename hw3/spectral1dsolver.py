@@ -26,10 +26,7 @@ class Spectral1DSolver:
         Nx : int
             Number of mesh cells.
         Nmu : int
-            Number of angular "degrees of freedom" (discrete ordinates or 
-                spherical harmonics)
-        spectral: logical
-            Solve with spherical harmonics (True) or discrete ordinates (False)
+            Number of angular spherical harmonics
         boundary: integer
             0 - use reflecting boundary conditions
             1 - use incident/vacuum boundary conditions
@@ -63,7 +60,7 @@ class Spectral1DSolver:
         # Will solve for Nphi ordinates or angles at each node
         # Matrices will be constructed as blocks at each position
         
-        self.moment = np.zeros((self.Nx)*(self.Nmu),dtype="float64")
+        self.moment = np.zeros((self.Nx+1)*(self.Nmu),dtype="float64")
         
         self.scalarflux = np.zeros(self.Nx,dtype="float64")
         self.oldflux = self.scalarflux.copy()-99
