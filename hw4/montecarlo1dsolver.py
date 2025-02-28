@@ -9,11 +9,12 @@ Created on Sun Feb 16 18:09:03 2025
 import numpy as np
 from numpy.random import rand as rand
 import matplotlib.pyplot as plt
+from numpy import format_float_positional as ff
 
 
 class MonteCarlo1DSolver:
     def __init__(self,length,sigmat,sigmas,q0,Nx,NP,
-                 boundary,psif,psib):
+                 boundary,psif,psib,name):
         """        
         Parameters
         ----------
@@ -63,6 +64,8 @@ class MonteCarlo1DSolver:
         self.psif = psif
         self.psib = psib
         
+        self.name = name
+        
         for i in range(1,len(length)):
             a = np.nonzero(self.xmesh >= self.length[i-1] and self.xmesh < self.length[i])
             self.sigmat[a] = sigmat[i]
@@ -100,6 +103,7 @@ class MonteCarlo1DSolver:
         if self.boundary[1]==0:
             right = 0
         
+        # Get total source per unit length area - will be used for normalization
         self.total = left*(self.psib[0]+self.psif[0]) + np.dot(self.q0,self.length) + right*(self.psib[1]+self.psif[1])
         prob = rand(1)*self.total
         
@@ -202,7 +206,7 @@ class MonteCarlo1DSolver:
             if self.rtype == 1:
                 self.celltally[1,self.cell] += 1
             # Track length
-        self.celltally[2,self.oldcell] += self.distance
+            self.celltally[2,self.oldcell] += self.distance
 
         # Forward and backward current
         if self.mu > 0:
@@ -224,9 +228,17 @@ class MonteCarlo1DSolver:
 
     def getmoments(self):
         
-        self.scalarflux_rates = (self.celltally[0,:]+self.celltally[1,:])/(self.part * self.dx * self.sigmat)*self.total
+        
+        self.count_rates = self.celltally[0,:] + self.celltally[1,:]
+
+        # Normalize tallies to total incoming source * length from boundaries and media
+        
+        self.scalarflux_rates = (self.count_rates)/(self.part * self.dx * self.sigmat)*self.total
         self.scalarflux_distance = self.celltally[2,:]/(self.part * self.dx)*self.total
         self.current = (self.surfacetally[0,:]-self.surfacetally[1,:])/(self.part)*self.total
+        
+        # Calculate error from error in count (square root), and dividing by number of particles so far
+        # We might be able to do 1/sqrt(N) directly, with N as the count...
         
         self.sfrerr = 2*np.sqrt(self.celltally[0,:]+self.celltally[1,:])/(self.part * self.dx * self.sigmat)*self.total
         self.sfderr = 2*np.sqrt(self.celltally[2,:])/(self.part * self.dx)*self.total
@@ -234,13 +246,26 @@ class MonteCarlo1DSolver:
         
     def plotmoments(self):
         
+        plt.errorbar(self.xmesh,self.count_rates,yerr=np.sqrt(self.count_rates),
+                     color="mediumturquoise",label="Total Reactions",ecolor="k")
+        plt.errorbar(self.xmesh,self.celltally[2,:],yerr=np.sqrt(self.celltally[2,:]),
+                     color="tomato",label="Distance Traveled",ecolor="k")
+        plt.legend(loc="upper right")
+        plt.xlabel(" x (cm) ")
+        plt.ylabel("Counts")
+        plt.title("Tally Comparison Scattering "+ ff(self.sigmas[0],5))
+        plt.savefig("montecarlo/"+self.name+"counts"+str(self.NP))
+        # plt.show()
+        plt.close()
+        
         plt.errorbar(self.xmesh,self.scalarflux_rates,yerr=self.sfrerr,color="mediumturquoise",ecolor="black",label="Scalar Flux Rates")
         plt.errorbar(self.xmesh,self.scalarflux_distance,yerr=self.sfderr,color="tomato",ecolor="black",label="Scalar Flux Distance")
         plt.errorbar(self.smesh,self.current,yerr=self.curerr,color="goldenrod",ecolor="black",label="Current")
+        plt.title("Scalar Flux and Current Scattering " + ff(self.sigmas[0],5))
         plt.legend(loc="upper right")
         
-        plt.savefig("mc"+str(self.Nx))
-        plt.show()
+        plt.savefig("montecarlo/"+self.name+"fluxcurrent"+str(self.NP))
+        # plt.show()
         plt.close()
         
     def simulation(self):
@@ -253,7 +278,7 @@ class MonteCarlo1DSolver:
         self.sfderr = 10*np.ones_like(self.xmesh)
         self.curerr = 10*np.ones_like(self.smesh)
         err = 10
-        while self.part < self.NP and err > 10**(-3):
+        while self.part < self.NP:
             
             if self.part % 10000 == 0:
                 print("Particle ",self.part)
@@ -287,11 +312,12 @@ class MonteCarlo1DSolver:
                 # In the event of a reflection, we assume the particle returns
                 # to its original cell with the reaction type there
                 
+                self.reflect = False
                 while (self.x < 0 and self.boundary[0]==0):
                     self.reflect = True
                     self.x = 0
                     self.cell = 0
-                    self.tally()
+                    self.tally() #keep track of distance and current tallies
                     
                     self.mu = -self.mu
                     self.x = self.oldx.copy()
@@ -310,7 +336,6 @@ class MonteCarlo1DSolver:
                     self.oldx = self.totallength.copy()
                     self.cell = self.oldcell.copy()
                     self.oldcell = -1
-                self.reflect = False
                 
                 # Tally for future reactions
                 self.tally()

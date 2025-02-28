@@ -125,5 +125,56 @@ if part1bc:
     
             plotreactionrate(ordinate, spectral, name, i)
 
+part2 = False
+
+mc = MonteCarlo1DSolver([100], [1], [0], [1], 160, 10**4, 
+                (0,0), (0,0), (0,0),"infinite"+str("zero"))
+mc.simulation()
+
+mc = MonteCarlo1DSolver([100], [1], [0], [1], 160, 10**5, 
+                (0,0), (0,0), (0,0),"infinite"+str("zero"))
+mc.simulation()
 
 
+
+
+if part2:
+    
+    ordinate = Ordinate1DSolver(100,1,0.5,0,Nx=160,
+                 boundary=(1,1),psif=(1,0),psib=(0,0),Nmu=64,accelerator=1)
+    ordinate.solve()
+
+    mc = MonteCarlo1DSolver([100], [1], [0.5], [0], 160, 10**4, 
+                    (1,0), (1,0), (0,0),"infinite"+str("zero"))
+    mc.simulation()
+
+    plt.plot(ordinate.xleft,ordinate.legmoments[1,:],color="mediumturquoise",
+             marker="2",markersize=5,label="Discrete Ordinate")
+    plt.errorbar(mc.smesh,mc.current,yerr=mc.curerr,color="tomato",
+                 marker="1",markersize=5,label="Monte Carlo")
+    plt.xlabel("x (cm)")
+    plt.ylabel("Current")
+    plt.title("Current in Monte Carlo and $S_{64}$ Simulation Scattering 0.5")
+    plt.legend(loc="upper right")
+    plt.savefig("montecarlo/sourcefreecurrent")
+    plt.close()
+    
+    for p in range(4,6):
+        for i,s in enumerate(sigmass[3:8]):
+            mc = MonteCarlo1DSolver([100], [1], [s], [1], 160, 10**p, 
+                            (0,0), (0,0), (0,0),"infinite"+str(i))
+            mc.simulation()
+    
+            mc = MonteCarlo1DSolver([100], [1], [s], [0], 160, 10**p, (1,1),
+                            (1,0), (0,0), "sourcefree"+str(i))
+            mc.simulation()
+    
+            mc = MonteCarlo1DSolver([100], [1], [s], [1], 160, 10**p, (1,1),
+                            (0,0), (0,0), "vacuum"+str(i))
+            mc.simulation()
+    
+    
+    
+    
+    
+    
