@@ -211,8 +211,7 @@ class MonteCarlo1DSolver:
         
             # Convert x lengths of travel into mean free paths
             if self.mu > 0 :
-                a = np.nonzero(self.cumulativelength-currentplace > 0)
-                ii = a[0] # which material particle is in
+                ii = np.amin(np.argwhere(self.cumulativelength-currentplace > 0)) # which material particle is in
                 # xdistance in mean free paths to leave material
                 leavemat = (self.cumulativelength[ii]-currentplace)*self.sigmatmat[ii]
                 while xdistance > leavemat:
@@ -224,8 +223,7 @@ class MonteCarlo1DSolver:
                 travel += xdistance/(self.mu*self.sigmatmat[ii])
                 return(travel)
             elif self.mu < 0:
-                a = np.nonzero(self.cumulativelength-currentplace < 0)
-                ii = a[-1] # which material particle is in
+                ii = np.amax(np.argwhere(self.cumulativelength-currentplace < 0)) # which material particle is in
                 # xdistance in mean free paths to leave material
                 leavemat = (currentplace-self.cumulativelength[ii])*self.sigmatmat[ii]
                 while xdistance > leavemat:
@@ -279,6 +277,7 @@ class MonteCarlo1DSolver:
                 trialdistance += self.dx/self.mu
             
             finalcelldist = min(self.x - self.surfacemesh[self.cell],self.dx)/self.mu
+            #finalcelldist = (self.x - self.surfacemesh[self.cell])/self.mu
             self.celltally[1,self.cell] += finalcelldist
             self.celltally[3,self.cell] += finalcelldist**2.0
             
@@ -295,7 +294,6 @@ class MonteCarlo1DSolver:
                 print("trial distance" ,trialdistance)
                 print("distance *mu > dx",(self.distance*self.mu > self.dx))
                 print("different cells",(np.abs(self.oldcell-self.cell) > 0))
-            
         
         elif self.mu < 0:
             
@@ -308,6 +306,7 @@ class MonteCarlo1DSolver:
                 self.celltally[3,cell] += (self.dx/self.mu)**2.0
             
             finalcelldist = -min(self.surfacemesh[self.cell+1]-self.x,self.dx)/self.mu
+            #finalcelldist = -(self.surfacemesh[self.cell+1]-self.x)/self.mu
             self.celltally[1,self.cell] += finalcelldist
             self.celltally[3,self.cell] += finalcelldist**2.0
             
@@ -362,10 +361,11 @@ class MonteCarlo1DSolver:
     def plotmoments(self):
         
         plt.errorbar(self.cellmesh,self.scalarflux_rates,yerr=self.sfrerr,
-                     color="mediumturquoise",label="Scalar Flux Rates",
-                     linestyle="-")
+                     color="mediumturquoise",label="Scalar Flux Rates",ecolor="white",
+                     linestyle="",marker="s",markersize=2)
         plt.errorbar(self.cellmesh,self.scalarflux_distance,yerr=self.sfderr,
-                     color="tomato",label="Scalar Flux Distance",linestyle=":")
+                     color="tomato",label="Scalar Flux Distance",ecolor="white",
+                     linestyle="",marker="o",markersize=2)
         plt.title("Scalar Flux Scattering "+ff(self.sigmas[0],5))
         plt.legend(loc="upper right")
         plt.ylim(-1,2.5)
@@ -376,7 +376,7 @@ class MonteCarlo1DSolver:
         
         plt.errorbar(self.surfacemesh,self.current,yerr=self.curerr,
                      color="goldenrod",label="Current",linestyle="--")
-        plt.title("Scalar Flux and Current Scattering " + ff(self.sigmas[0],5))
+        plt.title("Current Scattering " + ff(self.sigmas[0],5))
         plt.legend(loc="upper right")
         plt.ylim(-1,2.5)
         if not os.path.exists("montecarlo/"):
@@ -560,36 +560,38 @@ class MonteCarlo1DSolver:
             
             # Reflecting boundary conditions
             
-            # if self.x < 0:                
-            #     self.reflect = True
+            if self.x < 0:        
+                # Tally currents and track length with current motion
+                self.tally()
                 
-            #     self.x = 0
-            #     self.cell = self.get_cell()
+                # New position - flip angle and shift in x equal to difference of remainder
                 
-            #     self.tally()
-                
-            #     self.oldx = 0
-            #     self.oldcell = 0
-            #     self.mu = - self.mu
-            #     self.x -= self.xmove
-            #     self.cell = self.get_cell()
+                self.mu = - self.mu
+                self.distance = self.distance + (0 - self.oldx)/self.mu
+                self.x = self.mu* self.distance
+                self.cell = self.get_cell()
+
+                self.oldx = 0
+                self.oldcell = 0                                
                                                 
-            # if self.x > self.totallength:
+            if self.x > self.totallength:
+                 
+                # Tally currents and track length with current motion
+                self.tally()
                 
-            #     self.reflect= True
+                # New position - flip angle and reduce distance according to distance 
+                # already travel
+                # (Equivalent to presentation by Braden Pecora)
                 
-            #     self.x = self.totallength
-            #     self.cell = self.Nx-1
+                self.mu = - self.mu 
+                self.distance = self.distance + (self.totallength-self.oldx)/self.mu
+                self.oldcell = self.cell
+                self.oldx = self.x
+                self.x = self.totallength+self.mu* self.distance
+                self.cell = self.get_cell()
                 
-            #     self.tally()
                 
-            #     self.oldcell = self.cell
-            #     self.oldx = self.x
-            #     self.mu = - self.mu
-            #     self.x -= self.xmove
-            #     self.cell = self.get_cell()
                 
-            self.reflect = False
             
             self.tally()
             

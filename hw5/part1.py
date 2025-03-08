@@ -47,7 +47,7 @@ for q in qs:
     for t in sigmats:
         reflectcasesims = []
         for n in Ns:
-            montecarlo =  MonteCarlo1DSolver([40], [t], [0], [q], Nx, n*10**4, 
+            montecarlo =  MonteCarlo1DSolver([10], [t], [0], [q], Nx, n*10**4,
                                             (1,1), (0,0), (0,0), "simplereflect"+"q"+str(q)+"st"+str(t)+"n")
             montecarlo.simple_locationdirectionreflect(travellength=1/t)
     
@@ -56,7 +56,7 @@ for q in qs:
 # Consider arbitrary angle flux coming 
 leftcasesims = []
 for n in Ns:
-    montecarlo = MonteCarlo1DSolver([100], [1], [0], [0], Nx, n*10**2, 
+    montecarlo = MonteCarlo1DSolver([100], [1], [0], [0], Nx, n*10**2,
                                     (1,1), (1,0), (0,0), "simplefluxmu")
     montecarlo.simple_angledistanceabsorb(0)
     leftcasesims.append(montecarlo)
