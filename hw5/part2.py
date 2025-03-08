@@ -67,48 +67,53 @@ def simulationcomparison(prob,Nx):
     spectral = Spectral1DSolver(lengths[prob], transport[prob],scatter[prob],
                                 sources[prob], Nx,64,bounds,forwards[prob],
                                 backwards[prob],probname[prob])
-    spectral.solve()
-    
+    spectral.solve()  
     
     return([ordinate.scalarflux,spectral.scalarflux])
 
-for prob in range(0,9):
-    
-    bestord,bestspec,bestmc = simulationcomparison(prob, 2560)
-    
-    fig1,ax1 = plt.subplots(1)
-    fig2,ax2 = plt.subplots(2)
-    
-    for n in Nx[::-1]:
+montecarlo = MonteCarlo1DSolver([100], [1], [0.99], [0], 160, 10**4, 
+                                (1,1), (1,0), (0,0), "highscattersourcefree")
+montecarlo.simulation()
+
+deterministicconvergence=False
+if deterministicconvergence:
+    for prob in range(0,9):
         
-        ordinate,spectral,mc= simulationcomparison(prob,n)
+        bestord,bestspec,bestmc = simulationcomparison(prob, 2560)
         
-        meshdiff = np.size(bestord)//np.size(ordinate)
+        fig1,ax1 = plt.subplots(1)
+        fig2,ax2 = plt.subplots(2)
         
-        # Compute L1 norms of errors based on leftmost points in best grid
+        for n in Nx[::-1]:
+            
+            ordinate,spectral,mc= simulationcomparison(prob,n)
+            
+            meshdiff = np.size(bestord)//np.size(ordinate)
+            
+            # Compute L1 norms of errors based on leftmost points in best grid
+            
+            err1 = np.sum(np.abs(bestord[::meshdiff]-ordinate))/np.size(ordinate)
+            err2 = np.sum(np.abs(bestspec[::meshdiff]-spectral))/np.size(spectral)
+            
+            ax1.plot(n,err1,"ks")
+            ax2.plot(n,err2,"ks")
         
-        err1 = np.sum(np.abs(bestord[::meshdiff]-ordinate))/np.size(ordinate)
-        err2 = np.sum(np.abs(bestspec[::meshdiff]-spectral))/np.size(spectral)
+        ax1.set_xlabel("$N_x$")
+        ax1.set_ylabel("Average Error")
+        ax2.set_xlabel("$N_x$")
+        ax2.set_ylabel("Average Error")
         
-        ax1.plot(n,err1,"ks")
-        ax2.plot(n,err2,"ks")
-    
-    ax1.set_xlabel("$N_x$")
-    ax1.set_ylabel("Average Error")
-    ax2.set_xlabel("$N_x$")
-    ax2.set_ylabel("Average Error")
-    
-    ax1.set_xscale("log")
-    ax1.set_xscale("log")
-    ax2.set_xscale("log")
-    ax2.set_yscale("log")
-    
-    fig1.suptitle("Convergence of S_N ")
-    fig2.suptitle("Diffusion Convergence")
-    
-    fig1.savefig("ordinateconvergence"+str(prob))
-    fig2.savefig("diffusionconvergence"+str(prob))
-    
-    fig1.close()
-    fig2.close()
+        ax1.set_xscale("log")
+        ax1.set_xscale("log")
+        ax2.set_xscale("log")
+        ax2.set_yscale("log")
+        
+        fig1.suptitle("Convergence of S_N ")
+        fig2.suptitle("Diffusion Convergence")
+        
+        fig1.savefig("ordinateconvergence"+str(prob))
+        fig2.savefig("diffusionconvergence"+str(prob))
+        
+        fig1.close()
+        fig2.close()
         
