@@ -71,15 +71,20 @@ def simulationcomparison(prob,Nx):
     
     return([ordinate.scalarflux,spectral.scalarflux])
 
-montecarlo = MonteCarlo1DSolver([100], [1], [0.99], [0], 160, 10**4, 
-                                (1,1), (1,0), (0,0), "highscattersourcefree")
-montecarlo.simulation()
+def simulationcomparison(prob,NP):
+    
+    montecarlo = MonteCarlo1DSolver(lengths[prob], transport[prob],scatter[prob],
+                                sources[prob], Nx,NP,bounds,forwards[prob],
+                                backwards[prob],probname[prob])
+    montecarlo.simulation()
+    
+    return([montecarlo.scalarflux_rates])
 
 deterministicconvergence=False
 if deterministicconvergence:
     for prob in range(0,9):
         
-        bestord,bestspec,bestmc = simulationcomparison(prob, 2560)
+        bestord,bestspec = simulationcomparison(prob, 2560)
         
         fig1,ax1 = plt.subplots(1)
         fig2,ax2 = plt.subplots(2)
@@ -116,4 +121,10 @@ if deterministicconvergence:
         
         fig1.close()
         fig2.close()
+
+montecarloconvergence = False
+if montecarloconvergence:
+    for prob in range(0,9):
+        
+        
         

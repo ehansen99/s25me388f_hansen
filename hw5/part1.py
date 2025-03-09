@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numpy import format_float_positional as ff
 
-Nx = 160
+Nx = 640
 
 def simpledistanceabsorb(N,x,mu,name):
     montecarlo = MonteCarlo1DSolver([100], [1], [0], [0], Nx, N*10**2, 
@@ -47,7 +47,7 @@ for q in qs:
     for t in sigmats:
         reflectcasesims = []
         for n in Ns:
-            montecarlo =  MonteCarlo1DSolver([10], [t], [0], [q], Nx, n*10**4,
+            montecarlo =  MonteCarlo1DSolver([100], [t], [0], [q], Nx, n*10**4,
                                             (1,1), (0,0), (0,0), "simplereflect"+"q"+str(q)+"st"+str(t)+"n")
             montecarlo.simple_locationdirectionreflect(travellength=1/t)
     
