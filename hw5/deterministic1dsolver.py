@@ -189,7 +189,7 @@ class DeterministicSolver1D:
         self.difference_rhs[2*self.Nx+1] = 0
         
         self.s2correction = solve_banded((2,2),self.S2SA,self.difference_rhs)
-        print(self.s2correction)
+        # print(self.s2correction)
         
         self.scalarflux_correction = (self.s2correction[0:-2:2]+self.s2correction[2::2])/2
         self.scalarflux_correction += (self.s2correction[1:-2:2]+self.s2correction[3::2])/2
@@ -211,7 +211,7 @@ class DeterministicSolver1D:
             if self.it % 1 == 0:
                 print("Iteration ",self.it," Difference ",diff)
                 
-                if self.it > 20:
+                if self.it > 10:
                     print("Spectral Radius",
                           np.abs(np.amax(self.scalarflux-self.oldflux)/np.amax(self.oldflux-self.oldflux2)))
             
@@ -370,9 +370,17 @@ class Ordinate1DSolver(DeterministicSolver1D):
         #plt.plot(self.surfacemesh,self.moment[self.Nmu-1::self.Nmu],"b8",label="Most Positive Angular Flux")
         plt.xlabel("Position (cm)")
         plt.ylabel("Flux")
-        plt.title("Scalar and Angular Fluxes Scattering ")
+        if len(self.length) == 1:
+            plt.title("$S_{64}$ Scalar Flux "+str(self.Nx)+" Cells "+ "Scattering " + ff(self.sigmas0[0],2))
+        else:
+            plt.title("$S_{64}$ Scalar Flux "+str(self.Nx)+" Cells ")
         plt.legend()
-        plt.savefig(self.fname+"ordinate"+str(self.Nx))
+        if self.fname[-1] == "/": 
+            if not os.path.exists(self.fname+"ordinate/"):
+                os.mkdir(self.fname+"ordinate/")
+            plt.savefig(self.fname+"ordinate/Nx"+str(self.Nx),bbox_inches="tight")
+        else: 
+            plt.savefig(self.fname+"ordinate"+str(self.Nx),bbox_inches="tight")
         plt.close()
         
         self.legendremoments()
@@ -461,7 +469,7 @@ class Spectral1DSolver(DeterministicSolver1D):
             if ind == 1:
                 self.AB[2,-1] = 1
                 self.AB[3,-2] = -1/2
-                self.b[-1] = self.psib[0]
+                self.b[-1] = -self.psib[1]
                 
         elif (self.boundary[ind]==2):
             if ind == 0:
@@ -496,9 +504,17 @@ class Spectral1DSolver(DeterministicSolver1D):
         
         plt.xlabel("Position (cm)")
         plt.ylabel("Scalar Flux and Current")
-        plt.title("Moments of $P_2$ Solution Scattering ")
+        if len(self.length) == 1:
+            plt.title("Moments of $P_2$ Solution "+str(self.Nx)+" Cells " + "Scattering " + ff(self.sigmas0[0],2))
+        else:
+            plt.title("Moments of $P_2$ Solution "+str(self.Nx)+" Cells ")
         plt.legend()
-        plt.savefig(self.fname+"spectral"+str(self.Nx))
+        if self.fname[-1] == "/": 
+            if not os.path.exists(self.fname+"spectral/"):
+                os.mkdir(self.fname+"spectral/")
+            plt.savefig(self.fname+"spectral/Nx"+str(self.Nx),bbox_inches="tight")        
+        else: 
+            plt.savefig(self.fname+"spectral"+str(self.Nx),bbox_inches="tight")
         plt.close()
         
         self.discreteordinate()

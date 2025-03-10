@@ -647,20 +647,15 @@ class MonteCarlo1DSolver:
                 self.iteration += 1
              
             self.variancetally()
-            if self.particleno % 500 == 0: # Stop calculation early if already small error
-                self.getmoments()
-                linf_err = max(np.amax(self.curerr),np.amax(self.sfrerr),np.amax(self.sfderr))
-                if linf_err < 0.05:
-                    print("Linf Error less than 0.05, leaving")
-                    break
-                else:
-                    print("Linf Error ",linf_err)
-                    
-                    
-                
-                
-                
-                
+            # if self.particleno % 500 == 0: # Stop calculation early if already small error
+            #     self.getmoments()
+            #     linf_err = max(np.amax(self.curerr),np.amax(self.sfrerr),np.amax(self.sfderr))
+            #     if linf_err < 0.05:
+            #         print("Linf Error less than 0.05, leaving")
+            #         break
+            #     else:
+            #         print("Linf Error ",linf_err)
+                                           
         self.getmoments()
         self.plotmoments()     
     
@@ -710,23 +705,40 @@ class MonteCarlo1DSolver:
         plt.errorbar(self.cellmesh,self.scalarflux_distance,yerr=self.sfderr,
                      color="tomato",label="Scalar Flux Distance",ecolor="tomato",
                      linestyle="",marker="o",markersize=2)
-        plt.title("Scalar Flux Scattering "+ff(self.sigmas[0],5))
+        if len(self.length) == 1:
+            plt.title("Scalar Flux "+ str(self.NP) + " Particles "+"Scattering " + ff(self.sigmas[0],2))
+        else:
+            plt.title("Scalar Flux "+ str(self.NP) + " Particles ")
         plt.legend(loc="upper right")
         plt.ylim(-np.amax(self.scalarflux_rates)*0.5,np.amax(self.scalarflux_rates)*1.5)
-        if not os.path.exists("montecarlo/"):
-            os.mkdir("montecarlo/")
-        plt.savefig("montecarlo/"+"flux"+self.name+str(self.NP))
+        if "/" == self.name[-1]:
+            if not os.path.exists(self.name+"montecarlo/"):
+                os.mkdir(self.name+"montecarlo/")
+            plt.savefig(self.name+"montecarlo/"+"fluxNP"+str(self.NP),bbox_inches="tight")
+        else:
+            if not os.path.exists("montecarlo/"):
+                os.mkdir("montecarlo/")
+            plt.savefig("montecarlo/flux"+self.name+str(self.NP),bbox_inches="tight")
         plt.close()
         
         # print(self.current)
         plt.errorbar(self.surfacemesh,self.current,yerr=self.curerr,ecolor="goldenrod",
                      color="goldenrod",label="Current",linestyle="",marker="3")
-        plt.title("Current Scattering " + ff(self.sigmas[0],5))
+        if len(self.length) == 1:
+            plt.title("Current "+ str(self.NP) + " Particles "+"Scattering " + ff(self.sigmas[0],2))
+        else:
+            plt.title("Current "+ str(self.NP) + " Particles")
+        
         plt.legend(loc="upper right")
         plt.ylim(-max(1,np.abs(np.amax(self.current)*1.5)),max(1,np.abs(np.amax(self.current)*1.5)))
-        if not os.path.exists("montecarlo/"):
-            os.mkdir("montecarlo/")
-        plt.savefig("montecarlo/"+"current"+self.name+str(self.NP))
+        if "/" == self.name[-1]:
+            if not os.path.exists(self.name+"montecarlo/"):
+                os.mkdir(self.name+"montecarlo/")
+            plt.savefig(self.name+"montecarlo/"+"currentNP"+str(self.NP),bbox_inches="tight")
+        else:
+            if not os.path.exists("montecarlo/"):
+                os.mkdir("montecarlo/")
+            plt.savefig("montecarlo/current"+self.name+str(self.NP),bbox_inches="tight")
         # plt.show()
         plt.close()
         
