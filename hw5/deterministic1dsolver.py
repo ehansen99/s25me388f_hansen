@@ -43,7 +43,7 @@ class DeterministicSolver1D:
         accelerator: integer options for source iteration acceleration
             0  - no acceleration
             1 - Anderson acceleration two variable
-            2 - Anderson acceleration three variable (not working)
+            2 - S2 synthetic acceleration
 
         Returns
         -------
@@ -53,6 +53,8 @@ class DeterministicSolver1D:
         # Define length of each material and total lengths
         self.length = np.array(length)
         self.totallength = np.sum(self.length)
+        
+        self.materialend = np.cumsum(self.length)
 
         self.Nx = Nx
         self.dx = self.totallength/self.Nx
@@ -68,14 +70,15 @@ class DeterministicSolver1D:
         self.surfacemesh = np.linspace(0,self.totallength,self.Nx+1)
         self.cellmesh = self.surfacemesh[:-1]
         
-        a = np.nonzero(self.surfacemesh[:-1] < self.length[0])
+        a = np.nonzero(self.cellmesh < self.length[0])
         self.sigmat[a] = sigmat[0]
         self.sigmas0[a] = sigmas0[0]
         self.q0[a] = q0[0]
         
         for i in range(1,len(length)):
-            a = np.nonzero(self.surfacemesh[:-1] >= self.length[i-1] 
-                           and self.surfacemesh[:-1]  < self.length[i])
+            a1 = self.cellmesh >= self.materialend[i-1] 
+            a2 = self.cellmesh  < self.materialend[i]
+            a = np.nonzero(a1*a2)
             self.sigmat[a] = sigmat[i]
             self.sigmas0[a] = sigmas0[i]
             self.q0[a] = q0[i]
@@ -131,38 +134,13 @@ class DeterministicSolver1D:
             self.oldflux3 = self.oldflux2.copy()
             self.oldflux2 = self.oldflux.copy()
             self.oldflux = self.scalarflux.copy()
-        elif self.it > 4 and self.accelerator == 1: # Anderson acceleration storage of new variables
+        else: # storage of new variables
             self.oldflux2 = self.oldflux.copy()
             self.oldflux = self.scalarflux.copy()
-        else:
-            self.oldflux = self.scalarflux.copy()
         self.update_scalarflux()
-        if self.it > 10 and self.accelerator == 2: # Anderson acceleration three variables
-            # Compute dot products needed for solution
-            A = np.dot(self.scalarflux-self.oldflux,self.scalarflux-self.oldflux)
-            B = np.dot(self.oldflux-self.oldflux2,self.oldflux-self.oldflux2)
-            C = np.dot(self.oldflux2-self.oldflux3,self.oldflux2-self.oldflux3)
-            D = np.dot(self.scalarflux-self.oldflux,self.oldflux-self.oldflux2)
-            E = np.dot(self.scalarflux-self.oldflux,self.oldflux2-self.oldflux3)
-            F = np.dot(self.oldflux-self.oldflux2,self.oldflux2-self.oldflux3)
+        if self.it > 10 and self.accelerator == 2: # s2 synthetic acceleration
             
-            # Set up matrix elements to minimize combination residual
-            a11 = A + C - 2*E
-            a22 = B + C - 2*F
-            a12 = C + D - E - F
-            
-            b1 = C - E
-            b2 = C - F
-            
-            # Solve 
-            k = (a22 * b1 - a12 * b2)/(a11*a22 - a12**2)
-            l = (a11 * b2 - a12 * b1)/(a11*a22 - a12**2)
-            
-            print("k",k,"l",l,"1-k-l",1-k-l)
-            print("Determinant",a11*a22 - a12**2)
-            
-            # Combination scalar flux
-            self.scalarflux = k * self.scalarflux + l * self.oldflux + (1-k-l)*self.oldflux2
+            self.s2syntheticacceleration()
             
         elif self.it > 10 and self.accelerator == 1: # Anderson acceleration minimization of residual difference
             c = np.dot(self.scalarflux-self.oldflux,self.oldflux-self.oldflux2)
@@ -175,6 +153,49 @@ class DeterministicSolver1D:
         self.rhs_update()
         return(None)
     
+    def s2syntheticacceleration(self):
+        """
+        S2 synthetic acceleration technique as detailed in Adams Larsen 2002
+        We set up a matrix to solve for S2 corrections to the scalar flux
+        Adding these to the scalar flux may accelerate the source iteration technique
+        """
+        
+        
+        self.S2SA = np.zeros([5,2*(self.Nx+1)]) # Banded matrix 
+        self.difference_rhs = np.zeros(2*(self.Nx+1))
+        self.s2correction = np.zeros(2*(self.Nx+1))
+        
+        for i in range(0,self.Nx):
+            self.S2SA[0,3+2*i] = -self.dx * self.sigmas0[i]/4
+            
+            self.S2SA[1,2+2*i] =  np.sqrt(1.0/3.0)+(self.sigmat[i]/2-self.sigmas0[i]/4) * self.dx 
+            self.S2SA[1,3+2*i] = -np.sqrt(1.0/3.0)+(self.sigmat[i]/2-self.sigmas0[i]/4) * self.dx 
+            
+            self.S2SA[2,1+i*2:1+(i+1)*2] = -self.dx * self.sigmas0[i]/4 
+            
+            self.S2SA[3,2*i] = -np.sqrt(1.0/3.0)+(self.sigmat[i]/2-self.sigmas0[i]/4)*self.dx 
+            self.S2SA[3,1+2*i] = np.sqrt(1.0/3.0)+(self.sigmat[i]/2-self.sigmas0[i]/4)*self.dx
+            
+            self.S2SA[4,2*i] = -self.dx * self.sigmas0[i]/4 
+            
+            self.difference_rhs[1+i*2:1+(i+1)*2] = self.sigmas0[i]/2 *self.dx* (self.scalarflux[i]-self.oldflux[i])
+        
+        # Zero boundary condition at left
+        self.S2SA[2,0] = 1
+        self.difference_rhs[0] = 0
+        
+        # Reflecting boundary condition at right        
+        self.S2SA[2,-1] = 1
+        self.difference_rhs[2*self.Nx+1] = 0
+        
+        self.s2correction = solve_banded((2,2),self.S2SA,self.difference_rhs)
+        print(self.s2correction)
+        
+        self.scalarflux_correction = (self.s2correction[0:-2:2]+self.s2correction[2::2])/2
+        self.scalarflux_correction += (self.s2correction[1:-2:2]+self.s2correction[3::2])/2
+        
+        self.scalarflux += self.scalarflux_correction
+    
     def reactionrates(self):
             
         self.absorb = (self.sigmat-self.sigmas0) * self.scalarflux
@@ -185,10 +206,14 @@ class DeterministicSolver1D:
         diff = np.amax(np.abs(self.oldflux-self.scalarflux))
         self.it = 0
 
-        while diff > 10**(-5) and self.it < 1000000:
+        while diff > 10**(-5) and self.it < 10**5:
                     
-            if self.it % 500 == 0:
+            if self.it % 1 == 0:
                 print("Iteration ",self.it," Difference ",diff)
+                
+                if self.it > 20:
+                    print("Spectral Radius",
+                          np.abs(np.amax(self.scalarflux-self.oldflux)/np.amax(self.oldflux-self.oldflux2)))
             
             # Solve for the moments or discrete ordinates
             
@@ -208,10 +233,12 @@ class DeterministicSolver1D:
                 diff = np.amax(np.abs(self.oldflux-self.scalarflux))
             self.it += 1
             
+            
+            
         self.plotscalarflux()
         self.reactionrates()
         
-            
+   
         
                         
 
@@ -323,22 +350,24 @@ class Ordinate1DSolver(DeterministicSolver1D):
     
     def update_scalarflux(self):
                     
-        self.scalarflux = np.zeros(self.Nx+1)
+        self.scalarflux = np.zeros(self.Nx)
         # Integrate with Gaussian quadrature and average
-        for i in range(0,self.Nx+1):
-            self.scalarflux[i] = np.dot(self.moment[i*self.Nmu:(i+1)*self.Nmu],self.weights)
+        for i in range(0,self.Nx):
+            self.scalarflux[i] = (np.dot(self.moment[i*self.Nmu:(i+1)*self.Nmu],self.weights)
+                                  + np.dot(self.moment[(i+1)*self.Nmu:(i+2)*self.Nmu],self.weights))/2
         
     def rhs_update(self):
         
         for i in range(0,self.Nx):
             self.b[self.Nmu//2+i*self.Nmu:self.Nmu//2+(i+1)*self.Nmu] = (self.q0[i] +
-                        self.sigmas0[i]*(self.scalarflux[i]+self.scalarflux[i+1])/2)/2
+                        self.sigmas0[i]*(self.scalarflux[i]))/2
     
     def plotscalarflux(self):
         
+        plt.figure()
         plt.plot(self.cellmesh,self.scalarflux,"k",label="Scalar Flux")
-        plt.plot(self.surfacemesh,self.moment[::self.Nmu],"r8",label="Most Negative Angular Flux")
-        plt.plot(self.surfacemesh,self.moment[self.Nmu-1::self.Nmu],"b8",label="Most Positive Angular Flux")
+        #plt.plot(self.surfacemesh,self.moment[::self.Nmu],"r8",label="Most Negative Angular Flux")
+        #plt.plot(self.surfacemesh,self.moment[self.Nmu-1::self.Nmu],"b8",label="Most Positive Angular Flux")
         plt.xlabel("Position (cm)")
         plt.ylabel("Flux")
         plt.title("Scalar and Angular Fluxes Scattering ")
@@ -453,7 +482,7 @@ class Spectral1DSolver(DeterministicSolver1D):
         -------
         None.
         """
-        self.scalarflux = self.moment[::self.Nmu]
+        self.scalarflux = (self.moment[:-self.Nmu:self.Nmu]+self.moment[self.Nmu::self.Nmu])/2
         
     def rhs_update(self):
         

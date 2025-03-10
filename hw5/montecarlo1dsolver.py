@@ -408,18 +408,18 @@ class MonteCarlo1DSolver:
             # than the called distance
             # It could be less if the particle leaves the system
             
-            # if trialdistance - self.distance > 10**(-10):
-            #     print("Track Length not distance")
-            #     print("Particle ",self.particleno,"Iteration ",self.iteration)
-            #     print("x ",self.x)
-            #     print("mu ",self.mu)
-            #     print("oldx ",self.oldx)
-            #     print("cell ",self.cell)
-            #     print("old cell ",self.oldcell)
-            #     print("distance ",self.distance)
-            #     print("trial distance" ,trialdistance)
-            #     print("distance *mu > dx",(self.distance*self.mu > self.dx))
-            #     print("different cells",(np.abs(self.oldcell-self.cell) > 0))
+            if trialdistance - self.distance > 10**(-10):
+                print("Track Length not distance")
+                print("Particle ",self.particleno,"Iteration ",self.iteration)
+                print("x ",self.x)
+                print("mu ",self.mu)
+                print("oldx ",self.oldx)
+                print("cell ",self.cell)
+                print("old cell ",self.oldcell)
+                print("distance ",self.distance)
+                print("trial distance" ,trialdistance)
+                print("distance *mu > dx",(self.distance*self.mu > self.dx))
+                print("different cells",(np.abs(self.oldcell-self.cell) > 0))
         
         elif self.mu < 0:
             
@@ -504,7 +504,6 @@ class MonteCarlo1DSolver:
             # We know the particle will be absorbed so just tally
             self.rtype = 0
             self.reactiontally()
-            print(self.particleno)                        
 
         self.getmoments()
         self.plotmoments()
@@ -561,6 +560,7 @@ class MonteCarlo1DSolver:
             if self.particleno % 5000 == 0:
                 print("Particle No.", self.particleno)
             
+            self.particleno += 1
             self.iteration += 1
             
             self.x = simple_side
@@ -593,7 +593,6 @@ class MonteCarlo1DSolver:
                 print("Particle No.", self.particleno)
                 
             self.particleno += 1
-            self.iteration += 1
             self.particleiteration = 0
             self.rtype = 1
             self.x = self.get_sourceposition()
@@ -611,6 +610,7 @@ class MonteCarlo1DSolver:
                 self.reactiontally()
                 
                 self.particleiteration += 1
+                self.iteration += 1
                 
         self.getmoments()
         self.plotmoments()     
@@ -625,12 +625,12 @@ class MonteCarlo1DSolver:
         
         print(np.argwhere(self.celltally[2,:]/self.iteration - self.scalarflux_rates**2.0 < 0))
         print(np.amin(self.celltally[2,:]/self.iteration - self.scalarflux_rates**2.0))
-
         self.sfrerr = np.sqrt(self.celltally[2,:]/self.iteration - self.scalarflux_rates**2.0)
+
         print(np.argwhere(self.celltally[3,:]/self.iteration - self.scalarflux_distance**2.0 < 0))
         print(np.amin(self.celltally[3,:]/self.iteration - self.scalarflux_distance**2.0))
-
         self.sfderr = np.sqrt(self.celltally[3,:]/self.iteration - self.scalarflux_distance**2.0)
+        
         # Be a bit careful here E[(X-Y)^2] = E[X^2]+E[Y^2] - 2 E[XY]
         # In every case since mu is either positive or negative, XY = 0, so positive and negative fluxes uncorrelated
         self.curerr = np.sqrt((self.surfacetally[2,:]+self.surfacetally[3,:])/self.iteration - self.current**2.0)
@@ -647,6 +647,8 @@ class MonteCarlo1DSolver:
         self.sfrerr *= 2 * np.sqrt(1/(self.iteration-1)) * self.total/(self.dx * self.sigmat)
         self.sfderr *= 2 * np.sqrt(1/(self.iteration-1)) * self.total/(self.dx)
         self.curerr *= 2 * np.sqrt(1/(self.iteration-1)) * self.total
+        
+        print("Final Iteration No. ", self.iteration)
         
     def plotmoments(self):
         
@@ -665,7 +667,7 @@ class MonteCarlo1DSolver:
         plt.close()
         
         # print(self.current)
-        plt.errorbar(self.surfacemesh,self.current,yerr=self.curerr,
+        plt.errorbar(self.surfacemesh,self.current,yerr=self.curerr,ecolor="goldenrod",
                      color="goldenrod",label="Current",linestyle="",marker="3")
         plt.title("Current Scattering " + ff(self.sigmas[0],5))
         plt.legend(loc="upper right")
@@ -675,8 +677,6 @@ class MonteCarlo1DSolver:
         plt.savefig("montecarlo/"+"current"+self.name+str(self.NP))
         # plt.show()
         plt.close()
-            
-            
             
         
         

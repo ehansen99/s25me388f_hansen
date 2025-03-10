@@ -72,12 +72,12 @@ probname.append("sourcereflector/")
 def simulationcomparisondeterministic(prob,Nx):    
     
     ordinate = Ordinate1DSolver(lengths[prob], transport[prob],scatter[prob],
-                                sources[prob], Nx,64,bounds,forwards[prob],
+                                sources[prob], Nx,64,bounds[prob],forwards[prob],
                                 backwards[prob],probname[prob])
     ordinate.solve()
 
     spectral = Spectral1DSolver(lengths[prob], transport[prob],scatter[prob],
-                                sources[prob], Nx,2,bounds,forwards[prob],
+                                sources[prob], Nx,2,bounds[prob],forwards[prob],
                                 backwards[prob],probname[prob])
     spectral.solve()
     
@@ -86,21 +86,23 @@ def simulationcomparisondeterministic(prob,Nx):
 def simulationcomparisonmc(prob,NP):
     
     montecarlo = MonteCarlo1DSolver(lengths[prob], transport[prob],scatter[prob],
-                                sources[prob], Nx,NP,bounds,forwards[prob],
+                                sources[prob], Nx,NP,bounds[prob],forwards[prob],
                                 backwards[prob],probname[prob])
     montecarlo.simulation()
     
     return([montecarlo.scalarflux_rates])
 
-deterministicconvergence=False
+deterministicconvergence=True
 if deterministicconvergence:
     for prob in range(0,10):
         
         bestord,bestspec = simulationcomparisondeterministic(prob, 2560)
         
         fig1,ax1 = plt.subplots(1)
-        fig2,ax2 = plt.subplots(2)
+        fig2,ax2 = plt.subplots(1)
         
+        err1s = []
+        err2s = []
         for n in Nx:
             
             ordinate,spectral = simulationcomparisondeterministic(prob,n)
@@ -112,9 +114,11 @@ if deterministicconvergence:
             err1 = np.sum(np.abs(bestord[::meshdiff]-ordinate))/np.size(ordinate)
             err2 = np.sum(np.abs(bestspec[::meshdiff]-spectral))/np.size(spectral)
             
-            ax1.plot(n,err1,"ks")
-            ax2.plot(n,err2,"ks")
+            err1s.append(err1) 
+            err2s.append(err2)
         
+        ax1.plot(Nx,err1s,"ks")
+        ax2.plot(Nx,err2s,"ks")
         ax1.set_xlabel("$N_x$")
         ax1.set_ylabel("$L_1$ Error")
         ax2.set_xlabel("$N_x$")
@@ -131,10 +135,10 @@ if deterministicconvergence:
         fig1.savefig("ordinateconvergence"+str(prob)+"L1")
         fig2.savefig("diffusionconvergence"+str(prob)+"L1")
         
-        fig1.close()
-        fig2.close()
+        plt.close(fig1)
+        plt.close(fig2)
 
-montecarloconvergence = False
+montecarloconvergence = True
 if montecarloconvergence:
     for prob in range(0,10):
         
@@ -145,8 +149,7 @@ if montecarloconvergence:
         for n in NP:
             
             mc = simulationcomparisonmc(prob, n)
-            meshdiff = np.size(bestmc)//np.size(mc)
-            err1 = np.sum(np.abs(bestmc[::meshdiff]-bestmc))/np.size(bestmc)
+            err1 = np.sum(np.abs(bestmc-mc))/np.size(bestmc)
             
             plt.plot(n,err1,"ks")
         

@@ -49,7 +49,7 @@ for q in qs:
         for n in Ns:
             montecarlo =  MonteCarlo1DSolver([100], [t], [0], [q], Nx, n*10**4,
                                             (1,1), (0,0), (0,0), "simplereflect"+"q"+str(q)+"st"+str(t)+"n")
-            montecarlo.simple_locationdirectionreflect(travellength=1/t)
+            montecarlo.simple_locationdirectionreflect(travellength=0)
     
             reflectcasesims.append(montecarlo)
             
