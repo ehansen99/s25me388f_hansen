@@ -89,11 +89,15 @@ class MonteCarlo1DSolver:
         self.probscatter = self.sigmas/(self.sigmat)
         self.probabsorb = 1-self.probscatter
         
-        # Tally for reactions(0), distance(1), reactions^2 (2), distance^2 (3)
+        # Tally for reactions(0), distance(1),
+        # particle reactions (2), particle distance (3),
+        # reactions^2 (4), distance^2 (5)
         # Use squared tallies for variance
-        self.celltally = np.zeros([4,self.Nx])
-        # + current (0), -current(1), +current^2 (2), -current^2 (3)
-        self.surfacetally = np.zeros([4,self.Nx+1])
+        self.celltally = np.zeros([6,self.Nx])
+        # + current (0), -current(1), 
+        # particle + (2), particle - (3),
+        # +current^2 (4), -current^2 (5)
+        self.surfacetally = np.zeros([7,self.Nx+1])
         
         # Integrate total source
         
@@ -194,7 +198,7 @@ class MonteCarlo1DSolver:
         # mu = 2*rand - 1
         
         prob = rand(1)
-        if not self.surface:   
+        if not self.surface:
             mu = np.cos(prob * np.pi)
             self.forward =mu > 0 
         else:
@@ -324,7 +328,7 @@ class MonteCarlo1DSolver:
         else:
             rtype = 0
         return(rtype)
-        
+    
     def reactiontally(self):
         
         if self.x >= 0 and self.x <= self.totallength:
@@ -367,7 +371,7 @@ class MonteCarlo1DSolver:
             cell_distance_traveled = self.get_intra_cell_distance()
             
             self.celltally[1,self.oldcell] += cell_distance_traveled
-            self.celltally[3,self.oldcell] += cell_distance_traveled**2.0
+            self.celltally[3,self.oldcell] += cell_distance_traveled
                                 
         elif self.mu > 0:
             
@@ -380,11 +384,11 @@ class MonteCarlo1DSolver:
             
             trialdistance = oldcelldist
             self.celltally[1,self.oldcell] += oldcelldist
-            self.celltally[3,self.oldcell] += oldcelldist**2.0
+            self.celltally[3,self.oldcell] += oldcelldist
             
             for cell in range(self.oldcell+1,self.cell):
                 self.celltally[1,cell] += (self.dx)/self.mu
-                self.celltally[3,cell] += (self.dx/self.mu)**2.0
+                self.celltally[3,cell] += (self.dx)/self.mu
                 trialdistance += self.dx/self.mu
             
             if self.x >= self.surfacemesh[self.cell+1]:
@@ -400,7 +404,7 @@ class MonteCarlo1DSolver:
             
             
             self.celltally[1,self.cell] += finalcelldist
-            self.celltally[3,self.cell] += finalcelldist**2.0
+            self.celltally[3,self.cell] += finalcelldist
             
             trialdistance += finalcelldist
             
@@ -429,11 +433,11 @@ class MonteCarlo1DSolver:
                 oldcelldist = -self.dx/self.mu
                 
             self.celltally[1,self.oldcell] += oldcelldist
-            self.celltally[3,self.oldcell] += oldcelldist**2.0
+            self.celltally[3,self.oldcell] += oldcelldist
             
             for cell in range(self.cell+1,self.oldcell):
                 self.celltally[1,cell] += -(self.dx)/self.mu
-                self.celltally[3,cell] += (self.dx/self.mu)**2.0
+                self.celltally[3,cell] += -(self.dx/self.mu)
             
             if self.x <= 0:
                 finalcelldist = -self.dx/self.mu
@@ -445,7 +449,7 @@ class MonteCarlo1DSolver:
             
             #finalcelldist = -(self.surfacemesh[self.cell+1]-self.x)/self.mu
             self.celltally[1,self.cell] += finalcelldist
-            self.celltally[3,self.cell] += finalcelldist**2.0
+            self.celltally[3,self.cell] += finalcelldist
         
     
     def currenttally(self):
@@ -473,6 +477,32 @@ class MonteCarlo1DSolver:
                 self.surfacetally[3,0] += 1            
         
         return(None)                
+    
+    def variancetally(self):
+        """
+        We keep track of the variance tallies by adding the effects of all 
+        reactions, distance, current travelled per particle separately
+        and then squaring them and adding them to the variance post particle
+        
+        Then the particle specific tallies are reset for the next particle
+        """
+        self.celltally[4,:] += self.celltally[2,:]**2.0
+        self.celltally[5,:] += self.celltally[3,:]**2.0
+        self.surfacetally[4,:] += self.surfacetally[2,:]**2.0
+        self.surfacetally[5,:] += self.surfacetally[3,:]**2.0
+        # E[J+ * J-] for current variance
+        self.surfacetally[6,:] += self.surfacetally[2,:] * self.surfacetally[3,:]
+        
+        if np.any((self.particleno) * self.celltally[4:6,:]-self.celltally[0:2,:]**2.0 < 0):
+            print(self.particleno,"Negative Variance", 
+                  (self.particleno) * self.celltally[4:6,:]-self.celltally[0:1,:]**2.0,
+                  self.celltally[4:6,:],self.celltally[0:2,:]
+                  )
+        
+        self.celltally[2:4,:] = 0.0
+        self.surfacetally[2:4,:] = 0.0
+        
+        
     
     ## Simplified Simulations Follow
     
@@ -504,6 +534,8 @@ class MonteCarlo1DSolver:
             # We know the particle will be absorbed so just tally
             self.rtype = 0
             self.reactiontally()
+            
+            self.variancetally()
 
         self.getmoments()
         self.plotmoments()
@@ -535,6 +567,7 @@ class MonteCarlo1DSolver:
             self.distanceloop(fixedxdistance=travellength)
             
             self.reactiontally()
+            self.variancetally()
                 
             
         self.getmoments()
@@ -573,6 +606,7 @@ class MonteCarlo1DSolver:
             
             self.rtype = 0
             self.reactiontally()
+            self.variancetally()
             
         self.getmoments()
         self.plotmoments()
@@ -589,7 +623,7 @@ class MonteCarlo1DSolver:
         self.iteration = 0 
                         
         while self.particleno < self.NP:
-            if self.particleno % 50 == 0:
+            if self.particleno % 500 == 0:
                 print("Particle No.", self.particleno)
                 
             self.particleno += 1
@@ -611,6 +645,21 @@ class MonteCarlo1DSolver:
                 
                 self.particleiteration += 1
                 self.iteration += 1
+             
+            self.variancetally()
+            if self.particleno % 500 == 0: # Stop calculation early if already small error
+                self.getmoments()
+                linf_err = max(np.amax(self.curerr),np.amax(self.sfrerr),np.amax(self.sfderr))
+                if linf_err < 0.05:
+                    print("Linf Error less than 0.05, leaving")
+                    break
+                else:
+                    print("Linf Error ",linf_err)
+                    
+                    
+                
+                
+                
                 
         self.getmoments()
         self.plotmoments()     
@@ -619,21 +668,24 @@ class MonteCarlo1DSolver:
          
         # Compute averages and variances
         
-        self.scalarflux_rates = self.celltally[0,:]/(self.iteration)
-        self.scalarflux_distance = self.celltally[1,:]/(self.iteration)
-        self.current = (self.surfacetally[0,:]-self.surfacetally[1,:])/self.iteration
+        self.scalarflux_rates = self.celltally[0,:]/(self.particleno)
+        self.scalarflux_distance = self.celltally[1,:]/(self.particleno)
+        self.current = (self.surfacetally[0,:]-self.surfacetally[1,:])/(self.particleno)
         
-        print(np.argwhere(self.celltally[2,:]/self.iteration - self.scalarflux_rates**2.0 < 0))
-        print(np.amin(self.celltally[2,:]/self.iteration - self.scalarflux_rates**2.0))
-        self.sfrerr = np.sqrt(self.celltally[2,:]/self.iteration - self.scalarflux_rates**2.0)
+        #print(self.celltally[5,:])
+        #print(self.celltally[3,:])
+        #print(self.scalarflux_distance/self.particleno)
+        
+        #print(np.argwhere(self.celltally[4,:]/self.particleno - self.scalarflux_rates**2.0 < 0))
+        #print(np.amin(self.celltally[4,:]/self.particleno - self.scalarflux_rates**2.0))
+        self.sfrerr = np.sqrt(self.celltally[4,:]/(self.particleno) - self.scalarflux_rates**2.0)
 
-        print(np.argwhere(self.celltally[3,:]/self.iteration - self.scalarflux_distance**2.0 < 0))
-        print(np.amin(self.celltally[3,:]/self.iteration - self.scalarflux_distance**2.0))
-        self.sfderr = np.sqrt(self.celltally[3,:]/self.iteration - self.scalarflux_distance**2.0)
+        #print(np.argwhere(self.celltally[5,:]/self.particleno - self.scalarflux_distance**2.0 < 0))
+        #print(np.amin(self.celltally[5,:]/self.particleno - self.scalarflux_distance**2.0))
+        self.sfderr = np.sqrt(self.celltally[5,:]/(self.particleno) - self.scalarflux_distance**2.0)
         
         # Be a bit careful here E[(X-Y)^2] = E[X^2]+E[Y^2] - 2 E[XY]
-        # In every case since mu is either positive or negative, XY = 0, so positive and negative fluxes uncorrelated
-        self.curerr = np.sqrt((self.surfacetally[2,:]+self.surfacetally[3,:])/self.iteration - self.current**2.0)
+        self.curerr = np.sqrt((self.surfacetally[4,:]+self.surfacetally[5,:]-2*self.surfacetally[6,:])/(self.particleno) - self.current**2.0)
         
         # Normalize tallies to total incoming source * length from boundaries and media
         
@@ -644,11 +696,11 @@ class MonteCarlo1DSolver:
         # Similarly rescale errors, but with 2 * np.sqrt(1/(self.iteration-1)) 
         # (divide by sqrt(self.iteration) for uncertainty in mean
         
-        self.sfrerr *= 2 * np.sqrt(1/(self.iteration-1)) * self.total/(self.dx * self.sigmat)
-        self.sfderr *= 2 * np.sqrt(1/(self.iteration-1)) * self.total/(self.dx)
-        self.curerr *= 2 * np.sqrt(1/(self.iteration-1)) * self.total
+        self.sfrerr *= 2 * np.sqrt(1/(self.particleno-1)) * self.total/(self.dx * self.sigmat)
+        self.sfderr *= 2 * np.sqrt(1/(self.particleno-1)) * self.total/(self.dx)
+        self.curerr *= 2 * np.sqrt(1/(self.particleno-1)) * self.total
         
-        print("Final Iteration No. ", self.iteration)
+        
         
     def plotmoments(self):
         
@@ -677,6 +729,8 @@ class MonteCarlo1DSolver:
         plt.savefig("montecarlo/"+"current"+self.name+str(self.NP))
         # plt.show()
         plt.close()
+        
+        print("Final Iteration No. ", self.iteration)
             
         
         

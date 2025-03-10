@@ -14,8 +14,8 @@ from montecarlo1dsolver import MonteCarlo1DSolver
 
 
 
-Nx = [40,160,640]
-NP = [10**4,2*10**4,4*10**4]
+Nx = [40,160,640,2560]
+NP = [10**4,2*10**4,4*10**4,10**5]
 
 bounds = []
 
@@ -73,12 +73,12 @@ def simulationcomparisondeterministic(prob,Nx):
     
     ordinate = Ordinate1DSolver(lengths[prob], transport[prob],scatter[prob],
                                 sources[prob], Nx,64,bounds[prob],forwards[prob],
-                                backwards[prob],probname[prob])
+                                backwards[prob],probname[prob],accelerator=2)
     ordinate.solve()
 
     spectral = Spectral1DSolver(lengths[prob], transport[prob],scatter[prob],
                                 sources[prob], Nx,2,bounds[prob],forwards[prob],
-                                backwards[prob],probname[prob])
+                                backwards[prob],probname[prob],accelerator=2)
     spectral.solve()
     
     return([ordinate.scalarflux,spectral.scalarflux])
@@ -142,17 +142,18 @@ montecarloconvergence = True
 if montecarloconvergence:
     for prob in range(0,10):
         
-        bestmc = simulationcomparisonmc(prob, 10**5)
+        bestmc = simulationcomparisonmc(prob, 4*10**5)
         
         plt.figure()
         
+        err1s = []
         for n in NP:
             
             mc = simulationcomparisonmc(prob, n)
             err1 = np.sum(np.abs(bestmc-mc))/np.size(bestmc)
-            
-            plt.plot(n,err1,"ks")
+            err1s.append(err1)
         
+        plt.plot(NP,err1s,"ks")
         plt.xlabel("$Number of Particles$")
         plt.ylabel("$L_1$ Error")
         
