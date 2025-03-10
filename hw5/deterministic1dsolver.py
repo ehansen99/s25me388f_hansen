@@ -343,6 +343,7 @@ class Ordinate1DSolver(DeterministicSolver1D):
         plt.ylabel("Flux")
         plt.title("Scalar and Angular Fluxes Scattering ")
         plt.legend()
+        plt.savefig(self.fname+"ordinate"+str(self.Nx))
         plt.close()
         
         self.legendremoments()
@@ -468,6 +469,7 @@ class Spectral1DSolver(DeterministicSolver1D):
         plt.ylabel("Scalar Flux and Current")
         plt.title("Moments of $P_2$ Solution Scattering ")
         plt.legend()
+        plt.savefig(self.fname+"spectral"+str(self.Nx))
         plt.close()
         
         self.discreteordinate()

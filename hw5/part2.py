@@ -15,8 +15,9 @@ from montecarlo1dsolver import MonteCarlo1DSolver
 
 
 Nx = [40,160,640]
+NP = [10**4,2*10**4,4*10**4]
 
-bounds = (1,1)
+bounds = []
 
 scatterab = [[1],[0.99],[0.01],[0.0]]
 
@@ -35,6 +36,7 @@ for i in range(4):
     sources.append([0])
     scatter.append(scatterab[i])
     transport.append([1])
+    bounds.append((1,1))
     forwards.append((1,0))
     backwards.append((0,0))
     probname.append("leftsource/")
@@ -44,6 +46,7 @@ for i in range(4):
     sources.append([1])
     scatter.append(scatterab[i])
     transport.append([1])
+    bounds.append((1,1))
     forwards.append((0,0))
     backwards.append((0,0))
     probname.append("midsource/")
@@ -52,12 +55,21 @@ lengths.append([20,80])
 sources.append([0,0])
 scatter.append([2,0.006])
 transport.append([10,0.01])
+bounds.append((1,1))
 forwards.append((0,0))
 backwards.append((0,1))
 probname.append("absorbair/")
 
+lengths.append([50,10])
+sources.append([1,0])
+scatter.append([0,1.8])
+transport.append([0.1,2])
+bounds.append((1,0))
+forwards.append((0,0))
+backwards.append((0,0))
+probname.append("sourcereflector/")
 
-def simulationcomparison(prob,Nx):    
+def simulationcomparisondeterministic(prob,Nx):    
     
     ordinate = Ordinate1DSolver(lengths[prob], transport[prob],scatter[prob],
                                 sources[prob], Nx,64,bounds,forwards[prob],
@@ -65,13 +77,13 @@ def simulationcomparison(prob,Nx):
     ordinate.solve()
 
     spectral = Spectral1DSolver(lengths[prob], transport[prob],scatter[prob],
-                                sources[prob], Nx,64,bounds,forwards[prob],
+                                sources[prob], Nx,2,bounds,forwards[prob],
                                 backwards[prob],probname[prob])
-    spectral.solve()  
+    spectral.solve()
     
     return([ordinate.scalarflux,spectral.scalarflux])
 
-def simulationcomparison(prob,NP):
+def simulationcomparisonmc(prob,NP):
     
     montecarlo = MonteCarlo1DSolver(lengths[prob], transport[prob],scatter[prob],
                                 sources[prob], Nx,NP,bounds,forwards[prob],
@@ -82,16 +94,16 @@ def simulationcomparison(prob,NP):
 
 deterministicconvergence=False
 if deterministicconvergence:
-    for prob in range(0,9):
+    for prob in range(0,10):
         
-        bestord,bestspec = simulationcomparison(prob, 2560)
+        bestord,bestspec = simulationcomparisondeterministic(prob, 2560)
         
         fig1,ax1 = plt.subplots(1)
         fig2,ax2 = plt.subplots(2)
         
-        for n in Nx[::-1]:
+        for n in Nx:
             
-            ordinate,spectral,mc= simulationcomparison(prob,n)
+            ordinate,spectral = simulationcomparisondeterministic(prob,n)
             
             meshdiff = np.size(bestord)//np.size(ordinate)
             
@@ -104,9 +116,9 @@ if deterministicconvergence:
             ax2.plot(n,err2,"ks")
         
         ax1.set_xlabel("$N_x$")
-        ax1.set_ylabel("Average Error")
+        ax1.set_ylabel("$L_1$ Error")
         ax2.set_xlabel("$N_x$")
-        ax2.set_ylabel("Average Error")
+        ax2.set_ylabel("$L_1$ Error")
         
         ax1.set_xscale("log")
         ax1.set_xscale("log")
@@ -116,15 +128,42 @@ if deterministicconvergence:
         fig1.suptitle("Convergence of S_N ")
         fig2.suptitle("Diffusion Convergence")
         
-        fig1.savefig("ordinateconvergence"+str(prob))
-        fig2.savefig("diffusionconvergence"+str(prob))
+        fig1.savefig("ordinateconvergence"+str(prob)+"L1")
+        fig2.savefig("diffusionconvergence"+str(prob)+"L1")
         
         fig1.close()
         fig2.close()
 
 montecarloconvergence = False
 if montecarloconvergence:
-    for prob in range(0,9):
+    for prob in range(0,10):
+        
+        bestmc = simulationcomparisonmc(prob, 10**5)
+        
+        plt.figure()
+        
+        for n in NP:
+            
+            mc = simulationcomparisonmc(prob, n)
+            meshdiff = np.size(bestmc)//np.size(mc)
+            err1 = np.sum(np.abs(bestmc[::meshdiff]-bestmc))/np.size(bestmc)
+            
+            plt.plot(n,err1,"ks")
+        
+        plt.xlabel("$Number of Particles$")
+        plt.ylabel("$L_1$ Error")
+        
+        plt.xscale("log")
+        plt.yscale("log")
+        
+        plt.title("Convergence of Monte Carlo")
+        plt.savefig("montecarloconvergence"+str(prob)+"L1")
+        plt.close()
+        
+            
+            
+        
+        
         
         
         

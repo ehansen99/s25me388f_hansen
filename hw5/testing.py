@@ -8,7 +8,8 @@ Created on Fri Mar  7 22:50:23 2025
 
 from montecarlo1dsolver import MonteCarlo1DSolver
 
-mc = MonteCarlo1DSolver([2,3], [1,2], [0,0], [0,0], 160,10**4, (1,1), (1,0), (0,0),
-                        "testmultimat")
+mc = MonteCarlo1DSolver([100], [1], [0.99], [1], 100,10**4, (0,0), (0,0), (0,0),
+                        "testmultimatreflect")
 
-mc.simple_locationdirectionreflect()
+mc.simulation()
+# mc.simulation()

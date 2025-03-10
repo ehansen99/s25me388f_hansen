@@ -43,9 +43,11 @@ class MonteCarlo1DSolver:
         """
                 
         self.length = np.array(length)
-        self.cumulativelength = np.cumsum(self.length)
+        self.materialend = np.cumsum(self.length)
+        # Get start of materials 
+        self.materialstart = np.zeros_like(self.materialend)
+        self.materialstart[1:] = self.materialend[:-1]
         self.lengthrange = range(len(self.length))        
-        
         
         self.q0 = np.array(q0)
         
@@ -59,8 +61,11 @@ class MonteCarlo1DSolver:
         
         a = np.nonzero(self.cellmesh < self.length[0])
         
-        self.sigmatmat = np.array(sigmat)
-        self.sigmasmat = np.array(sigmas)
+        self.sigmat_material = np.array(sigmat)
+        self.sigmas_material = np.array(sigmas)
+        
+        # Find length of each material in mean free paths
+        self.meanfreepath_material = self.length*self.sigmat_material
         
         self.sigmat = np.zeros(self.Nx)
         self.sigmas = np.zeros(self.Nx)
@@ -75,20 +80,19 @@ class MonteCarlo1DSolver:
         self.name = name
         
         for i in range(1,len(length)):
-            a1 = self.cellmesh >= self.length[i-1]
-            a2 = self.cellmesh < self.length[i]
+            a1 = self.cellmesh >= self.materialend[i-1]
+            a2 = self.cellmesh < self.materialend[i]
             a = np.nonzero(a1*a2)
             self.sigmat[a] = sigmat[i]
             self.sigmas[a] = sigmas[i]
             
         self.probscatter = self.sigmas/(self.sigmat)
         self.probabsorb = 1-self.probscatter
-
-        self.reflect = False # key to reset scatter angle or not
         
-        # Tally for reactions(0), distance(1)
-        # + current (0), -current(1)
+        # Tally for reactions(0), distance(1), reactions^2 (2), distance^2 (3)
+        # Use squared tallies for variance
         self.celltally = np.zeros([4,self.Nx])
+        # + current (0), -current(1), +current^2 (2), -current^2 (3)
         self.surfacetally = np.zeros([4,self.Nx+1])
         
         # Integrate total source
@@ -102,6 +106,8 @@ class MonteCarlo1DSolver:
         
         # Get total source per unit length area - will be used for normalization
         self.total = self.left*self.psif[0] + np.dot(self.q0,self.length) + self.right*self.psib[1]
+        
+        self.reflect = False
                           
     def get_sourceposition(self):
         """
@@ -127,7 +133,7 @@ class MonteCarlo1DSolver:
         elif prob > 1- self.right * self.psib[1]/self.total:
             x = [self.totallength]
             self.surface = True
-            self.backward = True
+            self.forward = False
         else:
             # Find initial position of particle from region sources
             self.surface = False
@@ -152,6 +158,30 @@ class MonteCarlo1DSolver:
         else:
             a = np.argwhere(self.cellmesh <= self.x)
             return(a[-1][0])
+    
+    def get_material(self):
+        """
+        
+
+        Returns
+        -------
+        Index of material that the particle is in
+
+        """
+        
+        # We handle a lot of boundary cases where x is equal to one of the elements
+        # So we will push x slightly according to the sign of mu so travel is correct
+        # This won't affect subsequent values because this isn't 
+        
+        # Boundary case - need to know sign of mu for which material to use
+        ii = np.amin(np.argwhere(self.materialend - self.x >= 0))
+        if np.amin(np.abs(self.materialend - self.x)) <= 10**(-10):
+            if self.mu >= 0:
+                return(ii+1)
+            else:
+                return(ii)
+        else:
+            return(ii)
         
     def get_sourceangle(self):
         """
@@ -188,57 +218,104 @@ class MonteCarlo1DSolver:
         
         return(mu)
         
-    def get_travellength(self):
+    def distanceloop(self,fixedxdistance=0):
         """
+        Structure - work through each material 
         Arguments:
-            x : double, position of particle (to allow for scattering 
-                                              within material)
+           fixedxdistance - prescribe distance that must be travelled in x
         Returns
         ------
         travel length of particle after initialization or scattering
         """
-
-        # Find distance in mean free paths
-        prob = rand(1)
-        distance = -np.log(prob)
         
-        if len(self.length) == 1 or self.mu == 0:
-            return(distance/self.sigmatmat[self.cell])
-        else:
-            # Find projected x distance in mean free paths
-            xdistance = self.mu * distance
+        self.oldx = np.copy(self.x)
+        self.oldcell = np.copy(self.cell)
+                
+        # Find total distance in mean free paths to travel
+        if fixedxdistance == 0:
+            mfpdistance = -np.log(rand(1))
+        mfpdistance_remaining = mfpdistance    
+        
+        # Exception for mu = 0
+        if self.mu == 0:
             
-            currentplace = self.x
-            travel = 0
+            self.oldx = np.copy(self.x)
+            self.oldcell = np.copy(self.cell)
+            
+            self.distance = mfpdistance/self.sigmat[self.cell]
+            self.tracklengthtally()
+            self.currenttally()
+            mfpdistance_remaining = 0
         
-            # Convert x lengths of travel into mean free paths
-            if self.mu > 0 :
-                ii = np.amin(np.argwhere(self.cumulativelength-currentplace > 0)) # which material particle is in
-                # xdistance in mean free paths to leave material
-                leavemat = (self.cumulativelength[ii]-currentplace)*self.sigmatmat[ii]
-                while xdistance > leavemat:
-                    travel += leavemat/(self.mu*self.sigmatmat[ii])
-                    xdistance -= leavemat
-                    currentplace = self.cumulativelength[ii]
-                    ii += 1
-                    leavemat = (self.cumulativelength[ii]-currentplace)*self.sigmatmat[ii]
-                travel += xdistance/(self.mu*self.sigmatmat[ii])
-                return(travel)
-            elif self.mu < 0:
-                ii = np.amax(np.argwhere(self.cumulativelength-currentplace < 0)) # which material particle is in
-                # xdistance in mean free paths to leave material
-                leavemat = (currentplace-self.cumulativelength[ii])*self.sigmatmat[ii]
-                while xdistance > leavemat:
-                    travel += leavemat/(self.mu * self.sigmatmat[ii])
-                    xdistance -= leavemat
-                    currentplace = self.cumulativelength[ii]
-                    ii -= 1
-                    leavemat = (currentplace-self.cumulativelength[ii])*self.sigmatmat[ii]
-                travel += xdistance/(self.mu * self.sigmatmat[ii])
-                return(travel)
+        # Move through materials and tally in each until mfp_distancereamining runs out        
+        while mfpdistance_remaining > 0:
+            
+            self.oldx = np.copy(self.x)
+            self.oldcell = np.copy(self.cell)
+            
+            self.material = self.get_material()
+            # print(self.particleno,self.x,self.cell,self.mu,mfpdistance_remaining,self.material)
+            
+            if self.mu > 0:
+                # Distance to leave material in mean free paths
+                leavemat = (self.materialend[self.material] - self.oldx)*self.sigmat_material[self.material]/self.mu
+                
+                if mfpdistance_remaining > leavemat:
+                    
+                    self.distance = (self.materialend[self.material] - self.oldx)/self.mu
+                    mfpdistance_remaining -= leavemat
+                    
+                    self.x = self.materialend[self.material]
+                    self.cell = self.get_cell()
+                else:
+                    self.distance = mfpdistance_remaining/self.sigmat_material[self.material]
+                    mfpdistance_remaining = 0
+                    
+                    self.xmove = self.mu * self.distance 
+                    self.x += self.xmove
+                    self.cell = self.get_cell()
+                
             else:
-                return(distance/self.sigmat[self.cell])
-
+                
+                leavemat = -(self.oldx - self.materialstart[self.material])*self.sigmat_material[self.material]/self.mu
+                
+                if mfpdistance_remaining > leavemat:
+                    
+                    self.distance = -(self.oldx - self.materialstart[self.material])/self.mu
+                    mfpdistance_remaining -= leavemat
+                    
+                    # Push particle slightly into
+                    self.x = self.materialstart[self.material]
+                    self.cell = self.get_cell()
+                    
+                    
+                else:
+                    self.distance = mfpdistance_remaining/self.sigmat_material[self.material]
+                    mfpdistance_remaining = 0
+                    self.xmove = self.mu * self.distance
+                    self.x += self.xmove
+                    self.cell = self.get_cell()
+            
+            # Tally now before reflection or leaving
+            self.tracklengthtally()
+            self.currenttally()
+            
+            if self.x <= 0:
+                
+                if self.reflect or self.boundary[0] == 0:
+                    self.mu *= -1 # For reflecting boundary, change particle direction and allow to continue
+                else:
+                    self.x -= 1 # Force particle outside of domain so break particle loop
+                    mfpdistance_remaining = 0 # Terminate material loop
+                                
+            if self.x >= self.totallength: 
+                if self.reflect or self.boundary[1] == 0:
+                    self.mu *= -1
+                else:
+                    self.x += 1 # Force particle outside boundary so break particle loop
+                    mfpdistance_remaining = 0 # Terminate material loop            
+                    
+        
     def whichreaction(self):
         
         prob = rand(1)
@@ -246,9 +323,15 @@ class MonteCarlo1DSolver:
             rtype = 1
         else:
             rtype = 0
-        
         return(rtype)
-    
+        
+    def reactiontally(self):
+        
+        if self.x >= 0 and self.x <= self.totallength:
+            self.celltally[0,self.cell] += 1
+            # E[X^2] tallies for variance
+            self.celltally[2,self.cell] += 1
+            
     def get_intra_cell_distance(self):
         
         if self.mu == 0:
@@ -261,29 +344,23 @@ class MonteCarlo1DSolver:
                 upperbound = min(self.oldx,self.surfacemesh[self.cell+1])
                 lowerbound = max(self.x,self.surfacemesh[self.cell])
             return((upperbound-lowerbound)/np.abs(self.mu))
-    
-    def tally(self):
+            
+    def tracklengthtally(self):
         
         # Check that particle position and old position update appropriately
         # There was a big with this due to numpy array standards
         
-        # if self.x == self.oldx:
-        #     print("Old x and x agree!!\n"*10)
+        if self.x == self.oldx and self.mu != 0 and self.iteration % 100 == 0:
+            print("Old x and x agree!!\n"*10)
+            print(self.x, self.oldx,self.oldcell,self.distance*self.mu,self.cell,self.iteration)
          
         # Check that particles in different cells are in different cells,
         # and that their stored distance would be appropriate
         
-        # if self.cell == self.oldcell and np.abs(self.x - self.oldx) > self.dx:
-        #     print("Old cell and cell agree!!\n"*10)
-        #     print("x, oldx, cell, oldcell")
-        #     print(self.x,self.oldx,self.cell,self.oldcell,self.distance*self.mu)
-        
-        if self.x >= 0 and self.x <= self.totallength:
-            self.celltally[0,self.cell] += 1
-            # E[X^2] tallies for variance
-            self.celltally[2,self.cell] += 1
-            
-        # Compute track length tally
+        if self.cell == self.oldcell and np.abs(self.x - self.oldx) > self.dx:
+            print("Old cell and cell agree!!\n"*10)
+            print("x, oldx, cell, oldcell")
+            print(self.x,self.oldx,self.cell,self.oldcell,self.distance*self.mu)
         
         if self.oldcell == self.cell or self.mu == 0:
             
@@ -369,19 +446,11 @@ class MonteCarlo1DSolver:
             #finalcelldist = -(self.surfacemesh[self.cell+1]-self.x)/self.mu
             self.celltally[1,self.cell] += finalcelldist
             self.celltally[3,self.cell] += finalcelldist**2.0
-            
-            
-        # Forward and backward current
+        
+    
+    def currenttally(self):
+        
         if self.mu > 0:
-            # original = (self.surfacemesh >= self.oldx)
-            # final = (self.surfacemesh <= self.x)
-
-                        
-            # a = np.nonzero(original * final)
-            # # print("Surface Forward",a)
-            # self.surfacetally[0,a] += 1
-            # # E[X^2] tallies for variance
-            # self.surfacetally[2,a] += 1
             
             self.surfacetally[0,self.oldcell+1:self.cell+1] += 1
             self.surfacetally[2,self.oldcell+1:self.cell+1] += 1
@@ -394,14 +463,6 @@ class MonteCarlo1DSolver:
                 
         else:
             
-            # # print(self.x,self.oldx)
-            # original = (self.surfacemesh <= self.oldx)
-            # final = (self.surfacemesh >= self.x)
-            # a = np.nonzero(original * final)
-            # # print("Surface Backward",a)
-            # self.surfacetally[1,a] += 1
-            # self.surfacetally[3,a] += 1
-            
             self.surfacetally[1,self.cell+1:self.oldcell+1] += 1
             self.surfacetally[3,self.cell+1:self.oldcell+1] += 1
             if self.oldx >= self.totallength:
@@ -409,10 +470,9 @@ class MonteCarlo1DSolver:
                 self.surfacetally[3,-1] += 1
             if self.x <= 0:
                 self.surfacetally[1,0] += 1
-                self.surfacetally[3,0] += 1
-            
+                self.surfacetally[3,0] += 1            
         
-        return(None)
+        return(None)                
     
     ## Simplified Simulations Follow
     
@@ -439,22 +499,15 @@ class MonteCarlo1DSolver:
             self.mu = mu
             
             self.cell = self.get_cell()
-            self.distance = self.get_travellength()
-            self.xmove = self.mu * self.distance
+            self.distanceloop()
             
-            self.oldx = self.x
-            self.x += self.xmove
-            self.oldcell = self.cell
-            self.cell = self.get_cell()
-            
-            self.rtype = 0
-                        
             # We know the particle will be absorbed so just tally
-            
-            self.tally()
+            self.rtype = 0
+            self.reactiontally()
+            print(self.particleno)                        
 
         self.getmoments()
-        self.plotmoments()        
+        self.plotmoments()
         
                 
     def simple_locationdirectionreflect(self,travellength=0):
@@ -467,73 +520,26 @@ class MonteCarlo1DSolver:
         """
         self.particleno = 0
         self.iteration = 0 
-        
+        self.reflect = True
+                        
         while self.particleno < self.NP:
             if self.particleno % 5000 == 0:
                 print("Particle No.", self.particleno)
                 
             self.particleno += 1
             self.iteration += 1
-            self.reflect = False
             
             self.x = self.get_sourceposition()
             self.mu = self.get_sourceangle()
-            
             self.cell = self.get_cell()
             
-            if travellength == 0:
-                self.distance = self.get_travellength()
-            else:
-                self.distance = travellength
+            self.distanceloop(fixedxdistance=travellength)
             
-            self.xmove = self.mu * self.distance
-            
-            self.oldx = self.x
-            self.x += self.xmove
-            self.oldcell = self.cell
-            self.cell = self.get_cell()
-            
-            
-            
-            # Reflecting boundary conditions
-            
-            if self.x < 0:        
-                # Tally currents and track length with current motion
-                self.tally()
+            self.reactiontally()
                 
-                # New position - flip angle and shift in x equal to difference of remainder
-                
-                self.mu = - self.mu
-                self.distance -= (self.oldx - 0)/self.mu 
-                
-                self.oldx = 0
-                self.oldcell = 0
-                                
-                self.x = self.mu* self.distance
-                self.cell = self.get_cell()
-                                                
-            if self.x > self.totallength:
-                 
-                # Tally currents and track length with current motion
-                self.tally()
-                
-                # New position - flip angle and reduce distance according to distance 
-                # already travel
-                # (Should be equivalent to presentation by Braden Pecora)
-                
-                self.mu = - self.mu 
-                self.distance -= (self.totallength-self.oldx)/(-self.mu)
-                self.oldx = self.totallength
-                self.oldcell = self.Nx-1
-                self.x = self.totallength+self.mu* self.distance
-                self.cell = self.get_cell()
-            
-            self.tally()
             
         self.getmoments()
-        self.plotmoments()
-            
-                    
+        self.plotmoments()             
         
     def simple_angledistanceabsorb(self,simple_side):
         """
@@ -554,9 +560,8 @@ class MonteCarlo1DSolver:
         while self.particleno < self.NP:
             if self.particleno % 5000 == 0:
                 print("Particle No.", self.particleno)
-            self.particleno += 1
-            self.iteration += 1
             
+            self.iteration += 1
             
             self.x = simple_side
             self.cell = self.get_cell()
@@ -564,107 +569,51 @@ class MonteCarlo1DSolver:
             self.surface = True
             self.forward = (simple_side < self.totallength/2)
             self.mu = self.get_sourceangle()
-            self.distance = self.get_travellength()
-            self.xmove = self.mu * self.distance
-            
-            self.oldx = self.x
-            self.x += self.xmove
-            self.oldcell = self.cell
-            self.cell = self.get_cell()
+            self.distanceloop()
             
             self.rtype = 0
-            
-            self.tally()
+            self.reactiontally()
             
         self.getmoments()
         self.plotmoments()
         
     def simulation(self):
-        
-        # Number of particles
-        
+        """
+        Two numbers per particle history - generate source position and mu
+        with reflecting boundary condition
+        Arguments:
+            simple_side - either 0 or the total length of cells
+            mu - fixed incident angle
+        """
         self.particleno = 0
-        
-        self.sfrerr = 10*np.ones_like(self.cellmesh)
-        self.sfderr = 10*np.ones_like(self.cellmesh)
-        self.curerr = 10*np.ones_like(self.surfacemesh)
-        err = 10
-        while self.particleno < self.NP:
-            
-            if self.particleno % 10000 == 0:
-                print("Particle ",self.particleno)
-                print("Max Currents",np.amax(self.surfacetally[0,:]),np.amax(self.surfacetally[1,:]))
-            
-            self.x = self.get_sourceposition()
-            self.cell = self.get_cell()
-            self.rtype = 1
+        self.iteration = 0 
                         
-            while self.rtype != 0 and (self.x >= 0) and (self.x <= self.totallength):
+        while self.particleno < self.NP:
+            if self.particleno % 50 == 0:
+                print("Particle No.", self.particleno)
                 
-                if self.iteration == 0:
-                    self.mu = self.get_sourceangle()
-                    self.rtype = self.whichreaction()
-                    self.distance = self.get_travellength()
-                
-                self.xmove = self.mu * self.distance
-                self.oldx = self.x
-                self.x += self.xmove
-                #print(self.distance)
-                #print(self.x,self.oldx)
-                self.oldcell = self.cell
-                self.cell = self.get_cell()
-                
-                # Adjust for reflecting boundary conditions                
-                if self.x < 0 and self.boundary[0] == 0:        
-                    # Tally currents and track length with current motion
-                    self.tally()
-                    
-                    # New position - flip angle and shift in x equal to difference of remainder
-                    # This does assume that the particle hasn't reflected into a different region
-                    
-                    self.mu = - self.mu
-                    self.distance -= (self.oldx - 0)/self.mu 
-                    
-                    self.oldx = 0
-                    self.oldcell = 0
-                                    
-                    self.x = self.mu* self.distance
-                    self.cell = self.get_cell()
-                                                    
-                if self.x > self.totallength and self.boundary[1] == 0:
-                     
-                    # Tally currents and track length with current motion
-                    self.tally()
-                    
-                    # New position - flip angle and reduce distance according to distance 
-                    # already travel
-                    # (Should be equivalent to presentation by Braden Pecora)
-                    
-                    self.mu = - self.mu 
-                    self.distance -= (self.totallength-self.oldx)/(-self.mu)
-                    self.oldx = self.totallength
-                    self.oldcell = self.Nx-1
-                    self.x = self.totallength+self.mu* self.distance
-                    self.cell = self.get_cell()
-             
-                # Tally for future reactions
-                self.tally()
-                    
-                self.iteration += 1
-                
-                if self.iteration % 5000 == 0:
-                    print("Particle No ",self.particeno)
-                    print("Interaction No ", self.iteration)
             self.particleno += 1
-            if self.particleno % 10000 == 0:
-                self.getmoments()
-                err = (np.sum(self.sfrerr)+np.sum(self.sfderr)+np.sum(self.curerr))/(3*self.Nx+1)
-                print("Avg Uncertainty",err)
-                    
+            self.iteration += 1
+            self.particleiteration = 0
+            self.rtype = 1
+            self.x = self.get_sourceposition()
+            
+            while self.x >=0 and self.x <= self.totallength and self.rtype == 1:
+                if self.particleiteration == 0:
+                    self.mu = self.get_sourceangle()
+                else:
+                    self.mu = self.get_scatterangle()
+                self.cell = self.get_cell()
+            
+                self.distanceloop()
+            
+                self.rtype = self.whichreaction()
+                self.reactiontally()
+                
+                self.particleiteration += 1
+                
         self.getmoments()
-        self.plotmoments()
-        
-        return(None)
+        self.plotmoments()     
     
     def getmoments(self):
          
@@ -674,7 +623,13 @@ class MonteCarlo1DSolver:
         self.scalarflux_distance = self.celltally[1,:]/(self.iteration)
         self.current = (self.surfacetally[0,:]-self.surfacetally[1,:])/self.iteration
         
+        print(np.argwhere(self.celltally[2,:]/self.iteration - self.scalarflux_rates**2.0 < 0))
+        print(np.amin(self.celltally[2,:]/self.iteration - self.scalarflux_rates**2.0))
+
         self.sfrerr = np.sqrt(self.celltally[2,:]/self.iteration - self.scalarflux_rates**2.0)
+        print(np.argwhere(self.celltally[3,:]/self.iteration - self.scalarflux_distance**2.0 < 0))
+        print(np.amin(self.celltally[3,:]/self.iteration - self.scalarflux_distance**2.0))
+
         self.sfderr = np.sqrt(self.celltally[3,:]/self.iteration - self.scalarflux_distance**2.0)
         # Be a bit careful here E[(X-Y)^2] = E[X^2]+E[Y^2] - 2 E[XY]
         # In every case since mu is either positive or negative, XY = 0, so positive and negative fluxes uncorrelated
@@ -703,7 +658,7 @@ class MonteCarlo1DSolver:
                      linestyle="",marker="o",markersize=2)
         plt.title("Scalar Flux Scattering "+ff(self.sigmas[0],5))
         plt.legend(loc="upper right")
-        plt.ylim(-3,3)
+        plt.ylim(-np.amax(self.scalarflux_rates)*0.5,np.amax(self.scalarflux_rates)*1.5)
         if not os.path.exists("montecarlo/"):
             os.mkdir("montecarlo/")
         plt.savefig("montecarlo/"+"flux"+self.name+str(self.NP))
@@ -714,7 +669,7 @@ class MonteCarlo1DSolver:
                      color="goldenrod",label="Current",linestyle="",marker="3")
         plt.title("Current Scattering " + ff(self.sigmas[0],5))
         plt.legend(loc="upper right")
-        plt.ylim(-3,3)
+        plt.ylim(-max(1,np.abs(np.amax(self.current)*1.5)),max(1,np.abs(np.amax(self.current)*1.5)))
         if not os.path.exists("montecarlo/"):
             os.mkdir("montecarlo/")
         plt.savefig("montecarlo/"+"current"+self.name+str(self.NP))
