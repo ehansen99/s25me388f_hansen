@@ -13,8 +13,8 @@ import matplotlib.pyplot as plt
 
 
 discreteord1st = True
-Nx = 1000
-Nmu = 64
+Nx = 10000
+Nmu = 256
 NP = 10000
 
 Nx2 = 4000
@@ -25,19 +25,19 @@ if discreteord1st:
     #ordinate.solve()
     
     
-    ordinatecoll = Ordinate1DSolver([35,5,10],[2,2,10],[1.99,1.8,2],[0,0,0], Nx,Nmu, (1,1), (0,0), (0,0),
-                       fname="ord1stcoll"+str(Nx),accelerator=2)
-    ordinatecoll.homework6()
+    # ordinatecoll = Ordinate1DSolver([35,5,10],[2,2,10],[1.99,1.8,2],[0,0,0], Nx,Nmu, (1,1), (0,0), (0,0),
+    #                    fname="ord1stcoll"+str(Nx),accelerator=2)
+    # ordinatecoll.homework6()
     
-    ordinate = Ordinate1DSolver([35,5,10],[2,2,10],[1.99,1.8,2],[0,0,0], Nx,Nmu, (1,1), (1,0), (0,0),
-                       fname="ordguessway"+str(Nx),accelerator=2)
+    ordinate = Ordinate1DSolver([35,5,10],[2,2,10],[1.8,1.8,2],[0,0,0], Nx,Nmu, (1,1), (1,0), (0,0),
+                       fname="ordguessway"+str(Nx),accelerator=0)
     ordinate.solve()
     
-    ordinatecoll2 = Ordinate1DSolver([35,5,10],[2,2,10],[1.99,1.8,2],[0,0,0], Nx2,Nmu, (1,1), (0,0), (0,0),
-                       fname="ord1stcoll"+str(Nx),accelerator=2)
-    ordinatecoll2.homework6()
+    # ordinatecoll2 = Ordinate1DSolver([35,5,10],[2,2,10],[1.99,1.8,2],[0,0,0], Nx2,Nmu, (1,1), (0,0), (0,0),
+    #                    fname="ord1stcoll"+str(Nx),accelerator=2)
+    # ordinatecoll2.homework6()
     
-montecarlo1st = True
+montecarlo1st = False
 if montecarlo1st:
     mccoll = MonteCarlo1DSolver([35,5,10],[2,2,10],[1.99,1.8,2],[0,0,0],Nx,NP,(1,1),(0,0),(0,0),
                             "mc1stcoll"+str(Nx))

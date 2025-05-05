@@ -8,45 +8,8 @@ from time import perf_counter
 
 from numba.experimental import jitclass
 
-class Rectangle:
-    """
-    Builds a Cartesian rectangular mesh cell
-    Inputs:
-       xleft - left x value
-       ybottom - bottom y value
-       hside - horizontal side length
-       vside - vertical side length
-    """
-
-    def __init__(self,xleft,ybottom,hside,vside,sigmat,sigmas,q0,number,numberx,numbery):
-
-        self.x1 = xleft
-        self.y1 = ybottom
-
-        self.x2 = xleft + hside
-        self.y2 = ybottom
-
-        self.x3 = xleft
-        self.y3 = ybottom + vside
-
-        self.x4 = xleft + hside
-        self.y4 = ybottom + vside
-
-        self.dx = hside
-        self.dy = vside
-        self.area = hside * vside
-
-        # Cell material properties
-        self.q0 = q0
-        self.sigmat = sigmat
-        self.sigmas = sigmas
-
-        self.number = number
-        self.numberx = numberx
-        self.numbery = numbery
-
 class DiamondDifference2D:
-    def __init__(self,regions,boundarytype,Ntheta,Nphi,accelerator=None,fullboundary=None):
+    def __init__(self,domain,regiontype,boundarytype,Ntheta,Nphi,accelerator=None,fullboundary=None,fname=None,show=False):
         
         """
         Initialize solver for 2D discrete ordinates code
@@ -59,7 +22,8 @@ class DiamondDifference2D:
         All other regions must be disjoint - if cover background, background properties will be overwritten
         """
 
-        self.regions = regions
+        self.domain = domain
+        self.regiontype = regiontype
         self.Ntheta = Ntheta
         self.Nphi = Nphi
         
@@ -70,26 +34,29 @@ class DiamondDifference2D:
 
         self.definecellmesh()
 
-        self.q0 = np.zeros([self.Nx,self.Ny])
-        self.sigmat = np.zeros([self.Nx,self.Ny])
-        self.sigmas = np.zeros([self.Nx,self.Ny])
+        self.fname = fname
+        self.show = show
 
-        for cell in self.cellmesh:
-            self.q0[cell.numberx,cell.numbery] = cell.q0
-            self.sigmat[cell.numberx,cell.numbery] = cell.sigmat
-            self.sigmas[cell.numberx,cell.numbery] = cell.sigmas
-        
         self.mus,self.muweights = roots_legendre(self.Ntheta)
         # When we do an integral, phi runs from -pi to pi, so we rescale Legendre points/weights
         xs,xweights = roots_legendre(self.Nphi)
-        self.phis = np.pi * (xs)
-        self.phiweights = xweights*np.pi
+        self.phis = np.pi * (xs+1) / 2
+        self.phiweights = xweights*np.pi/2
 
         self.scalarflux = np.zeros([self.Nx,self.Ny])
         self.updatesource()
         self.oldflux = -99*np.ones_like(self.scalarflux)
 
         self.meshplots()
+
+    def insidecircletest(self,pointlist,xcenter,ycenter,radius):
+
+        for point in pointlist:
+            x = point[0]
+            y = point[1]
+            if (x-xcenter)**2 + (y-ycenter)**2 > radius**2:
+                return(False)
+        return(True)
 
     def definecellmesh(self):
         
@@ -99,24 +66,122 @@ class DiamondDifference2D:
         #     raise RuntimeError("Background region must be longer than sum of all other regions")
         # elif self.regions[0][4] < np.sum(self.regions[1:][4]) or self.regions[0][5] < np.sum(self.regions[1:][5]):
         #     raise RuntimeError("Background region uses more grid points than sum of all other regions")
-        self.Nx = self.regions[0][4]
-        self.Ny = self.regions[0][5]
+        self.Nx = self.domain[4]
+        self.Ny = self.domain[5]
 
-        self.cellmesh = []
-        if len(self.regions) == 1:
+        self.q0 = np.zeros([self.Nx,self.Ny])
+        self.sigmat = np.zeros([self.Nx,self.Ny])
+        self.sigmas = np.zeros([self.Nx,self.Ny])
 
-            region = self.regions[0]
+        if self.regiontype == "null": # One material throughout domain
 
-            self.xsurface = np.linspace(region[0],region[0]+region[2],region[4]+1)
-            self.ysurface = np.linspace(region[1],region[1]+region[3],region[5]+1)
-            self.xcell = np.arange(region[0], region[2] + region[0], region[2] / region[4])
-            self.ycell = np.arange(region[1], region[3] + region[1], region[3] / region[5])
+            self.xsurface = np.linspace(self.domain[0],self.domain[0]+self.domain[2],self.domain[4]+1)
+            self.ysurface = np.linspace(self.domain[1],self.domain[1]+self.domain[3],self.domain[5]+1)
+            self.xcell = np.arange(self.domain[0], self.domain[2] + self.domain[0], self.domain[2] / self.domain[4])
+            self.ycell = np.arange(self.domain[1], self.domain[3] + self.domain[1], self.domain[3] / self.domain[5])
 
-            print(len(self.xcell),len(self.ycell))
-            for i,x in enumerate(self.xcell):
-                for j,y in enumerate(self.ycell):
-                    self.cellmesh.append(Rectangle(x, y, region[2]/region[4], region[3]/region[5],
-                                                   region[6], region[7], region[8],self.Ny*i+j,i,j))
+            self.q0 = self.domain[8] * np.ones([self.Nx,self.Ny])
+            self.sigmat = self.domain[6] * np.ones([self.Nx,self.Ny])
+            self.sigmas = self.domain[7] * np.ones([self.Nx,self.Ny])
+
+        if self.regiontype == "circ_lamp" or self.regiontype == "post": # Resolve a circular region in the middle 20% of the domain
+            # Either an isotropic source or an absorber
+            # absorbing medium
+
+            xlamp1_center = 0.5 * self.domain[2]
+            ylamp1_center = 0.5 * self.domain[3]
+            lamp_radius = 0.1 * self.domain[2]
+
+            # Resolve the area occupied by the circular source with half of the grid points
+            left_points = self.Nx//4
+            right_points = self.Nx//4 + 1
+            side_points = left_points + right_points
+            center_points = self.Nx//2
+            if side_points + center_points != self.Nx + 1:
+                # Add extra points to the sides
+                extra_cells = self.Nx + 1 - (side_points + center_points)
+                if np.mod(extra_cells,2) == 0:
+                    left_points += extra_cells//2
+                    right_points += extra_cells//2
+                else:
+                    left_points += extra_cells//2 + 1
+                    right_points += extra_cells//2
+
+            self.xsurface = np.hstack((np.linspace(0,0.4*self.domain[2],left_points+1)[:-1],
+                                       np.linspace(0.4*self.domain[2],0.6*self.domain[2],center_points+1)[:-1],
+                                       np.linspace(0.6*self.domain[2],self.domain[2],right_points)))
+            self.ysurface = np.hstack((np.linspace(0,0.4*self.domain[3],left_points+1)[:-1],
+                                       np.linspace(0.4*self.domain[3],0.6*self.domain[3],center_points+1)[:-1],
+                                       np.linspace(0.6*self.domain[3],self.domain[3],right_points)))
+
+            self.xcell = self.xsurface[:-1]
+            self.ycell = self.ysurface[:-1]
+
+            print(np.shape(self.xsurface),np.shape(self.ysurface),np.shape(self.xcell),np.shape(self.ycell))
+
+            for icell,x in enumerate(self.xcell):
+                for jcell,y in enumerate(self.ycell):
+
+                    xtuples = [(x,y),(self.xsurface[icell+1],self.ysurface[jcell+1]),
+                               (x,self.ysurface[jcell+1]),(self.xsurface[icell+1],y)]
+
+                    if self.insidecircletest(xtuples,xlamp1_center,ylamp1_center,lamp_radius):
+                        if self.regiontype == "circ_lamp":
+                            self.sigmat[icell, jcell] = 1
+                            self.sigmas[icell, jcell] = 0
+                            self.q0[icell, jcell] = 1
+                        else:
+                            self.sigmat[icell, jcell] = 10
+                            self.sigmas[icell, jcell] = 2
+                            self.q0[icell, jcell] = 0
+                    else:
+                        self.sigmat[icell,jcell] = self.domain[6]
+                        self.sigmas[icell,jcell] = self.domain[7]
+                        self.q0[icell,jcell] = self.domain[8]
+
+        if self.regiontype == "circ_lamp4": # Put four 10% domain size sources in each quadrant of domain, regular mesh
+
+            if self.domain[4] < 20:
+                raise RuntimeError("Not enough cells used to resolve four circular lamps")
+
+            xlamp1_center = 0.25*self.domain[2]
+            ylamp1_center = 0.25*self.domain[3]
+
+            xlamp2_center = 0.25 * self.domain[2]
+            ylamp2_center = 0.75 * self.domain[3]
+
+            xlamp3_center = 0.75 * self.domain[2]
+            ylamp3_center = 0.25 * self.domain[3]
+
+            xlamp4_center = 0.75 * self.domain[2]
+            ylamp4_center = 0.75 * self.domain[3]
+
+            lamp_radius = 0.05 * self.domain[2]
+
+            # Define xcell and ycell - still using cells from domain
+
+            self.xsurface = np.linspace(self.domain[0], self.domain[0] + self.domain[2], self.domain[4] + 1)
+            self.ysurface = np.linspace(self.domain[1], self.domain[1] + self.domain[3], self.domain[5] + 1)
+            self.xcell = np.arange(self.domain[0], self.domain[2] + self.domain[0], self.domain[2] / self.domain[4])
+            self.ycell = np.arange(self.domain[1], self.domain[3] + self.domain[1], self.domain[3] / self.domain[5])
+
+            for icell,x in enumerate(self.xcell):
+                for jcell,y in enumerate(self.ycell):
+
+                    xtuples = [(x, y), (self.xsurface[icell + 1], self.ysurface[jcell + 1]),
+                               (x, self.ysurface[jcell + 1]), (self.xsurface[icell + 1], y)]
+
+                    if self.insidecircletest(xtuples,xlamp1_center,ylamp1_center,lamp_radius) \
+                            or self.insidecircletest(xtuples,xlamp2_center,ylamp2_center,lamp_radius) \
+                            or self.insidecircletest(xtuples,xlamp3_center,ylamp3_center,lamp_radius) \
+                            or self.insidecircletest(xtuples,xlamp4_center,ylamp4_center,lamp_radius):
+                        self.sigmat[icell, jcell] = 1
+                        self.sigmas[icell, jcell] = 0
+                        self.q0[icell, jcell] = 1
+                    else:
+                        self.sigmat[icell,jcell] = self.domain[6]
+                        self.sigmas[icell,jcell] = self.domain[7]
+                        self.q0[icell,jcell] = self.domain[8]
 
     def angle_boundaries(self,mu,phi):
         """
@@ -139,18 +204,29 @@ class DiamondDifference2D:
             if mu > 0 and np.cos(phi) > 0:
                 angle_horizontal = 1.0
                 angle_vertical = 1.0
+
         elif self.boundarytype == "upleft":
             if mu < 0 and np.cos(phi) > 0:
                 angle_horizontal = 1.0
                 angle_vertical = 1.0
+
         elif self.boundarytype == "downright":
             if mu > 0 and np.cos(phi) < 0:
                 angle_horizontal = 1.0
                 angle_vertical = 1.0
+
         elif self.boundarytype == "downleft":
             if mu < 0 and np.cos(phi) < 0:
                 angle_horizontal = 1.0
                 angle_vertical = 1.0
+
+        elif self.boundarytype == "opendoor":
+            if mu == np.amax(self.mus):
+                abovecondition = self.ysurface > 0.35 * self.domain[3]
+                belowcondition = self.ysurface < 0.65 * self.domain[3]
+                a = np.nonzero(abovecondition*belowcondition)
+                angle_vertical = np.zeros_like(self.ysurface)
+                angle_vertical[a] = 1.0
 
         elif self.boundarytype == "full":
             angle_horizontal = self.fullboundary[(mu,phi)][0]
@@ -159,17 +235,17 @@ class DiamondDifference2D:
         # Four cases : left, bottom face boundary; left, top; right, bottom; else
 
         if mu > 0 and np.cos(phi) > 0: # Set bottom and left boundaries
-            self.angularflux_nodes[0,:] = angle_horizontal
-            self.angularflux_nodes[:,0] = angle_vertical
+            self.angularflux_nodes[0,:] = angle_vertical
+            self.angularflux_nodes[:,0] = angle_horizontal
         elif mu > 0 and np.cos(phi) < 0: # left, top
-            self.angularflux_nodes[0,:] = angle_horizontal
-            self.angularflux_nodes[:,-1] = angle_vertical
+            self.angularflux_nodes[0,:] = angle_vertical
+            self.angularflux_nodes[:,-1] = angle_horizontal
         elif mu < 0 and np.cos(phi) > 0: # right, bottom
-            self.angularflux_nodes[-1,:] = angle_horizontal
-            self.angularflux_nodes[:,0] = angle_vertical
+            self.angularflux_nodes[-1,:] = angle_vertical
+            self.angularflux_nodes[:,0] = angle_horizontal
         else:
-            self.angularflux_nodes[-1,:] = angle_horizontal
-            self.angularflux_nodes[:,-1] = angle_vertical
+            self.angularflux_nodes[-1,:] = angle_vertical
+            self.angularflux_nodes[:,-1] = angle_horizontal
 
     def angularfluxsweep_coefficients(self,mu,phi,dx,dy,sigmat):
         """
@@ -260,7 +336,7 @@ class DiamondDifference2D:
         
     def updatesource(self):
         
-        self.rhs = (self.q0 + self.sigmas * self.scalarflux)/(4*np.pi)
+        self.rhs = (self.q0 + self.sigmas * self.scalarflux)/(2*np.pi)
         
     def src_iteration(self):
         
@@ -269,7 +345,7 @@ class DiamondDifference2D:
         
         # Source Iteration Loop
         time1 = perf_counter()
-        while iteration < 10**5 and error > 10**(-5):
+        while iteration < 10**5 and error > 10**(-10):
             
             if iteration % 10 == 0:
                 print("Iteration "+str(iteration) + " Error " + ff(error,5))
@@ -317,64 +393,79 @@ class DiamondDifference2D:
     def meshplots(self):
         
         X,Y = np.meshgrid(self.xcell,self.ycell,indexing="ij")
-        
+
+        print(np.shape(X))
+        print(np.shape(Y))
+        # Mesh plot
+        plt.plot(X.flatten(),Y.flatten(),"ks",markersize=0.2)
+        plt.xlabel("x (m)")
+        plt.ylabel("y (m)")
+        plt.title("Cell Southwest Nodes")
+        if self.show:
+            plt.show()
+        plt.close()
+
         # Source plot
         plt.contourf(X,Y,self.q0,cmap="YlGnBu",vmin=0,vmax=2)
         plt.colorbar()
-        plt.xlabel("x (cm)")
-        plt.ylabel("y (cm)")
+        plt.xlabel("x (m)")
+        plt.ylabel("y (m)")
         plt.title("Material Sources")
-        plt.show()
+        if self.show:
+            plt.show()
         plt.close()
         
         # Scattering Ratio Plot
         plt.contourf(X,Y,self.sigmas/self.sigmat,cmap="YlOrBr",vmin=0,vmax=1)
         plt.colorbar()
-        plt.xlabel("x (cm)")
-        plt.ylabel("y (cm)")
+        plt.xlabel("x (m)")
+        plt.ylabel("y (m)")
         plt.title("Scattering Ratio of Geometry")
-        
-        plt.show()
+        if self.show:
+            plt.show()
         plt.close()
         
     def resultplots(self):
-        
+
+        fig, ax = plt.subplots(1)
         X,Y = np.meshgrid(self.xcell,self.ycell,indexing="ij")
         
-        plt.contourf(X,Y,self.scalarflux,cmap="YlGnBu",levels=100)
-        plt.colorbar()
-        plt.xlabel("x (cm)")
-        plt.ylabel("y (cm)")
-        plt.title("Scalar Flux")
-        plt.show()
+        pltsf = ax.contourf(X,Y,self.scalarflux,cmap="RdYlBu",levels=30)
+        fig.colorbar(pltsf)
+        ax.set_xlabel("x (m)")
+        ax.set_ylabel("y (m)")
+        ax.set_title("Scalar Flux "+str(self.Nx)+" Axis Cells "+str(self.Ntheta*self.Nphi) +" Ordinates")
+        ax.set_aspect("equal")
+
+        fig.savefig(self.fname+"scalarflux")
+        if self.show:
+            plt.show()
         plt.close()
-        
-        X,Y = np.meshgrid(self.xcell,self.ycell,indexing="ij")
-        
-        plt.contourf(X,Y,self.currentx,cmap="RdYlBu",levels=100)
-        plt.colorbar()
-        plt.xlabel("x (cm)")
-        plt.ylabel("y (cm)")
-        plt.title("X Current")
-        plt.show()
+
+        fig, ax = plt.subplots(1)
+        pltcurx = ax.contourf(X,Y,self.currentx,cmap="RdYlBu",levels=30)
+        fig.colorbar(pltcurx)
+        ax.set_xlabel("x (m)")
+        ax.set_ylabel("y (m)")
+        ax.set_aspect("equal")
+        fig.suptitle("X Current "+str(self.Nx)+" Axis Cells "+str(self.Ntheta*self.Nphi) +" Ordinates")
+        fig.savefig(self.fname+"currentx")
+        if self.show:
+            plt.show()
         plt.close()
-        
-        X,Y = np.meshgrid(self.xcell,self.ycell,indexing="ij")
-        
-        plt.contourf(X,Y,self.currenty,cmap="RdYlBu",levels=100)
-        plt.colorbar()
-        plt.xlabel("x (cm)")
-        plt.ylabel("y (cm)")
-        plt.title("Y Current")
-        plt.show()
+
+        fig, ax = plt.subplots(1)
+        pltcury = ax.contourf(X,Y,self.currenty,cmap="RdYlBu",levels=30)
+        fig.colorbar(pltcury)
+        ax.set_xlabel("x (m)")
+        ax.set_ylabel("y (m)")
+        ax.set_aspect("equal")
+        fig.suptitle("Y Current "+str(self.Nx)+" Axis Cells "+str(self.Ntheta*self.Nphi) +" Ordinates")
+        fig.savefig(self.fname+"currenty")
+        if self.show:
+            plt.show()
         plt.close()
 
     def diffusionpreconditioner(self):
-
-
-
-
-
-
 
         raise NotImplementedError("Diffusion preconditioner not implemented")

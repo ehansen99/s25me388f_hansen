@@ -11,6 +11,7 @@ from numpy import format_float_positional as ff
 from scipy.linalg import solve_banded
 from scipy.special import roots_legendre,legendre_p
 import matplotlib.pyplot as plt
+from time import perf_counter
 import os
 
 class DeterministicSolver1D:
@@ -205,8 +206,9 @@ class DeterministicSolver1D:
                 
         diff = np.amax(np.abs(self.oldflux-self.scalarflux))
         self.it = 0
+        time1 = perf_counter()
 
-        while diff > 10**(-10) and self.it < 10**5:
+        while diff > 10**(-5) and self.it < 10**5:
                     
             if self.it % 1 == 0:
                 print("Iteration ",self.it," Difference ",diff)
@@ -234,7 +236,8 @@ class DeterministicSolver1D:
             self.it += 1
             
             
-            
+        time2 = perf_counter()
+        print("Time to Solution ",time2-time1)
         self.plotscalarflux()
         self.reactionrates()
 

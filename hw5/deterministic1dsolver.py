@@ -12,6 +12,7 @@ from scipy.linalg import solve_banded
 from scipy.special import roots_legendre,legendre_p
 import matplotlib.pyplot as plt
 import os
+from time import perf_counter
 
 class DeterministicSolver1D:
     
@@ -65,7 +66,8 @@ class DeterministicSolver1D:
         self.sigmat = np.zeros(self.Nx)
         self.sigmas0 = np.zeros(self.Nx)
         self.q0 = np.zeros(self.Nx)
-       
+        
+        
         # Define cell boundary positions
         self.surfacemesh = np.linspace(0,self.totallength,self.Nx+1)
         self.cellmesh = self.surfacemesh[:-1]
@@ -82,11 +84,17 @@ class DeterministicSolver1D:
             self.sigmat[a] = sigmat[i]
             self.sigmas0[a] = sigmas0[i]
             self.q0[a] = q0[i]
-                
+        
+        a = np.nonzero(self.cellmesh < 40)
+        self.q0[a] = np.exp(-2*self.cellmesh[a])
+        a = np.nonzero(self.cellmesh >= 40)
+        self.q0[a] = np.exp(-80)*np.exp(-10*(self.cellmesh[a]-40))        
+        
+        
         self.Nx = Nx
         self.Nmu = Nmu
         
-        self.boundary  = boundary
+        self.boundary = boundary
         self.psif = psif
         self.psib = psib
         
@@ -205,6 +213,7 @@ class DeterministicSolver1D:
                 
         diff = np.amax(np.abs(self.oldflux-self.scalarflux))
         self.it = 0
+        time1 = perf_counter()
 
         while diff > 10**(-5) and self.it < 10**5:
                     
@@ -234,13 +243,12 @@ class DeterministicSolver1D:
             self.it += 1
             
             
-            
+        time2 = perf_counter()
+        print("Time for Loop ",time2-time1)
         self.plotscalarflux()
         self.reactionrates()
-        
-   
-        
-                        
+
+        return(None)                                           
 
 class Ordinate1DSolver(DeterministicSolver1D):
     
@@ -270,7 +278,19 @@ class Ordinate1DSolver(DeterministicSolver1D):
         for i in range(0,self.Nx):
             self.AB[0,(i+1)*self.Nmu:(i+2)*self.Nmu] = self.mus/self.dx + self.sigmat[i]/2
             self.AB[self.Nmu,i*self.Nmu:(i+1)*self.Nmu] = self.sigmat[i]/2 - self.mus/self.dx
-            self.b[i*self.Nmu+self.Nmu//2:(1+i)*self.Nmu+self.Nmu//2] = self.q0[i]/2
+            self.b[(i+1)*self.Nmu+self.Nmu//2-1:(2+i)*self.Nmu+self.Nmu//2-1] = self.q0[i]/2
+                       
+        return(None)
+    
+    def matrix_setup1(self):
+        
+        self.AB = np.zeros([self.Nmu+1,((self.Nx+1)*self.Nmu)],dtype="float64")
+        self.nd = self.Nmu//2 # Number of upper and lower diagonals needed by solve_banded
+        
+        # Set Nmu/2 th diagonal 
+        for i in range(0,self.Nx):
+            self.AB[0,(i+1)*self.Nmu:(i+2)*self.Nmu] = self.mus/self.dx + self.sigmat[i]/2
+            self.AB[self.Nmu,i*self.Nmu:(i+1)*self.Nmu] = self.sigmat[i]/2 - self.mus/self.dx            
            
         return(None)
             
@@ -356,11 +376,15 @@ class Ordinate1DSolver(DeterministicSolver1D):
             self.scalarflux[i] = (np.dot(self.moment[i*self.Nmu:(i+1)*self.Nmu],self.weights)
                                   + np.dot(self.moment[(i+1)*self.Nmu:(i+2)*self.Nmu],self.weights))/2
         
+        return(None)
+        
     def rhs_update(self):
         
         for i in range(0,self.Nx):
-            self.b[self.Nmu//2+i*self.Nmu:self.Nmu//2+(i+1)*self.Nmu] = (self.q0[i] +
-                        self.sigmas0[i]*(self.scalarflux[i]))/2
+            self.b[self.Nmu//2+i*self.Nmu:self.Nmu//2+(i+1)*self.Nmu] = self.sigmas0[i]*(self.scalarflux[i])/2
+            self.b[(i+1)*self.Nmu+self.Nmu//2-1:(2+i)*self.Nmu+self.Nmu//2-1] += self.q0[i]/2
+            
+        return(None)
     
     def plotscalarflux(self):
         
@@ -371,9 +395,9 @@ class Ordinate1DSolver(DeterministicSolver1D):
         plt.xlabel("Position (cm)")
         plt.ylabel("Flux")
         if len(self.length) == 1:
-            plt.title("$S_{64}$ Scalar Flux "+str(self.Nx)+" Cells "+ "Scattering " + ff(self.sigmas0[0],2))
+            plt.title("$S_{"+ff(self.Nmu,0)+"}$ Scalar Flux "+str(self.Nx)+" Cells "+ "Scattering " + ff(self.sigmas0[0],2))
         else:
-            plt.title("$S_{64}$ Scalar Flux "+str(self.Nx)+" Cells ")
+            plt.title("$S_{"+ff(self.Nmu,0)+"}$ Scalar Flux "+str(self.Nx)+" Cells ")
         plt.legend()
         if self.fname[-1] == "/": 
             if not os.path.exists(self.fname+"ordinate/"):
@@ -381,9 +405,12 @@ class Ordinate1DSolver(DeterministicSolver1D):
             plt.savefig(self.fname+"ordinate/Nx"+str(self.Nx),bbox_inches="tight")
         else: 
             plt.savefig(self.fname+"ordinate"+str(self.Nx),bbox_inches="tight")
+        plt.show()
         plt.close()
         
         self.legendremoments()
+        
+        return(None)
         
     def legendremoments(self):
         
@@ -392,137 +419,5 @@ class Ordinate1DSolver(DeterministicSolver1D):
             legpolymu = legendre_p(i,self.mus)
             for x in range(0,self.Nx+1):
                 self.legmoments[i,x] = np.sum(self.weights*legpolymu*self.moment[x*self.Nmu:(x+1)*self.Nmu])
-        
-class Spectral1DSolver(DeterministicSolver1D):
-        
-    def matrix_setup(self):
-        """
-        Notice that only the boundary conditions and length scale of the 
-        problem changes.
-        So we define the matrix for most of the equations independent
-        of the solution routine.
-        We use a banded matrix for both discrete ordinate and spectral cases; 
-        only neighboring cells are assumed to be coupled.        
-
-        Parameters
-        ----------
-        Returns
-        -------
-        None.
-
-        """
-        
-        self.AB = np.zeros([self.Nmu+3,((self.Nx+1)*self.Nmu)],dtype="float64")
-        self.nd = self.Nmu//2 + 1 # Number of upper and lower diagonals needed by solve_banded
-        
-        for i in range(0,self.Nx):
-            self.AB[0,2+i*self.Nmu:2+(i+1)*self.Nmu] = np.array([0,1/self.dx])
-            self.AB[1,2+i*self.Nmu:2+(i+1)*self.Nmu] = np.array([self.sigmat[i]/2,self.sigmat[i]/2])
-            self.AB[2,1+i*self.Nmu:1+(i+1)*self.Nmu] = np.array([-1/self.dx,1/(3*self.dx)])
-            self.AB[3,i*self.Nmu:(i+1)*self.Nmu] = np.array([self.sigmat[i]/2,self.sigmat[i]/2])
-            self.AB[4,i*self.Nmu:(i+1)*self.Nmu] = np.array([-1/(3*self.dx),0])
-            self.b[1+self.Nmu*i] = self.q0[i]
-            
-        return(None)
-            
-    def reflecting_boundaries(self,ind):
-        """
-        Sets reflecting or incident/vacuum boundary conditions for the matrix.
-        For discrete ordinates, set opposite mu values equal at boundary.
-        For spherical harmonics, set odd moments to zero at each boundary.
-        See Exnihilo manual page 22.        
-
-        Returns
-        -------
-        None.
-
-        """
-        if ind == 0:
-            self.AB[self.Nmu-1,1] = 1
-            self.b[0] = 0
-        if ind == 1: 
-            self.AB[self.Nmu,-1] = 1
-            self.b[-1] = 0
-                    
-        return(None)
-    
-    def incidentvacuum_boundaries(self,ind):
-        """
-        Sets incident and vacuum boundary conditions for the matrix and RHS.
-        Booundary 1 - Marshak boundary conditions are used for spherical harmonics.
-        See Exnihilo manual page 22.
-        Boundary 2 - fix currents
-        
-
-        Returns
-        -------
-        None.
-
-        """
-        if (self.boundary[ind]==1):
-            # First row
-            if ind == 0:
-                self.AB[2,0] = 1
-                self.AB[1,1] = 1/2
-                self.b[0] = self.psif[0]
-            
-            if ind == 1:
-                self.AB[2,-1] = 1
-                self.AB[3,-2] = -1/2
-                self.b[-1] = -self.psib[1]
                 
-        elif (self.boundary[ind]==2):
-            if ind == 0:
-                self.AB[self.Nmu-1,1] = 1
-                self.b[0] = self.psif[1]
-            if ind == 1: 
-                self.AB[self.Nmu,-1] = 1
-                self.b[-1] = self.psib[1]
-        
         return(None)
-
-    def update_scalarflux(self):
-        """
-        Updates scalar flux
-        Zeroth moment for spherical harmonics
-        
-        Returns
-        -------
-        None.
-        """
-        self.scalarflux = (self.moment[:-self.Nmu:self.Nmu]+self.moment[self.Nmu::self.Nmu])/2
-        
-    def rhs_update(self):
-        
-        for i in range(0,self.Nx):
-            self.b[1+i*self.Nmu] = self.q0[i] + self.sigmas0[i] * self.scalarflux[i]
-            
-    def plotscalarflux(self):
-                    
-        plt.plot(self.surfacemesh,self.moment[::self.Nmu],"b-",label="Scalar Flux")
-        plt.plot(self.surfacemesh,self.moment[1::self.Nmu],"r:",label="Current")
-        
-        plt.xlabel("Position (cm)")
-        plt.ylabel("Scalar Flux and Current")
-        if len(self.length) == 1:
-            plt.title("Moments of $P_2$ Solution "+str(self.Nx)+" Cells " + "Scattering " + ff(self.sigmas0[0],2))
-        else:
-            plt.title("Moments of $P_2$ Solution "+str(self.Nx)+" Cells ")
-        plt.legend()
-        if self.fname[-1] == "/": 
-            if not os.path.exists(self.fname+"spectral/"):
-                os.mkdir(self.fname+"spectral/")
-            plt.savefig(self.fname+"spectral/Nx"+str(self.Nx),bbox_inches="tight")        
-        else: 
-            plt.savefig(self.fname+"spectral"+str(self.Nx),bbox_inches="tight")
-        plt.close()
-        
-        self.discreteordinate()
-        
-    def discreteordinate(self):
-        
-        self.dos = np.zeros([64,self.Nx+1],dtype="float64")
-        self.mus,self.weights = roots_legendre(64)
-        for mu in range(0,self.Nmu):
-            legpoly = legendre_p(mu,self.mus)
-            self.dos += (2*mu+1)/2 * np.transpose(self.moment[mu::self.Nmu,None] @ legpoly)        

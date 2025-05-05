@@ -12,8 +12,6 @@ import matplotlib.pyplot as plt
 from numpy import format_float_positional as ff
 import os
 
-
-
 class MonteCarlo1DSolver:
     def __init__(self,length,sigmat,sigmas,q0,Nx,NP,
                  boundary,psif,psib,name):
@@ -76,6 +74,7 @@ class MonteCarlo1DSolver:
         self.boundary = boundary
         self.psif = psif
         self.psib = psib
+        self.mup = []
         
         self.name = name
         
@@ -112,7 +111,7 @@ class MonteCarlo1DSolver:
         self.total = self.left*self.psif[0] + np.dot(self.q0,self.length) + self.right*self.psib[1]
         
         self.reflect = False
-                          
+        
     def get_sourceposition(self):
         """
         Returns
@@ -142,14 +141,16 @@ class MonteCarlo1DSolver:
             # Find initial position of particle from region sources
             self.surface = False
             prob = rand(1)
+
             # CDF of interior sources
             sourcecdf = np.cumsum(self.q0*self.length/np.dot(self.q0,self.length))
+
             # Find which material the particle is in
             ii = min(np.argwhere(sourcecdf >= prob))
             if ii == 0:
                 x = self.length[0] * prob/sourcecdf[ii]
             else:
-                x = self.length[ii-1] + (prob-sourcecdf[ii-1])/(self.cdf[ii]-sourcecdf[ii-1]) * (self.length[ii]-self.length[ii-1])
+                x = self.length[ii-1] + (prob-sourcecdf[ii-1])/(sourcecdf[ii]-sourcecdf[ii-1]) * (self.length[ii]-self.length[ii-1])
         
         return(x[0])
     
@@ -175,7 +176,6 @@ class MonteCarlo1DSolver:
         
         # We handle a lot of boundary cases where x is equal to one of the elements
         # So we will push x slightly according to the sign of mu so travel is correct
-        # This won't affect subsequent values because this isn't 
         
         # Boundary case - need to know sign of mu for which material to use
         ii = np.amin(np.argwhere(self.materialend - self.x >= 0))
@@ -203,7 +203,11 @@ class MonteCarlo1DSolver:
             self.forward =mu > 0 
         else:
             # Isotropic but positive
+            # Probably of a particle hitting the surface with direction mu is 
+            # mu
+            
             mu = np.cos(prob * np.pi/2)
+            
             if not self.forward:
                 mu = - mu
         
@@ -251,7 +255,7 @@ class MonteCarlo1DSolver:
             self.currenttally()
             mfpdistance_remaining = 0
         
-        # Move through materials and tally in each until mfp_distancereamining runs out        
+        # Move through materials and tally in each until mfp_distancereamining runs out
         while mfpdistance_remaining > 0:
             
             self.oldx = np.copy(self.x)
@@ -386,10 +390,14 @@ class MonteCarlo1DSolver:
             self.celltally[1,self.oldcell] += oldcelldist
             self.celltally[3,self.oldcell] += oldcelldist
             
-            for cell in range(self.oldcell+1,self.cell):
-                self.celltally[1,cell] += (self.dx)/self.mu
-                self.celltally[3,cell] += (self.dx)/self.mu
-                trialdistance += self.dx/self.mu
+            self.celltally[1,self.oldcell+1:self.cell] += (self.dx/self.mu)
+            self.celltally[3,self.oldcell+1:self.cell] += (self.dx/self.mu)
+            trialdistance += (self.cell-self.oldcell-1)*self.dx/self.mu
+            
+            # for cell in range(self.oldcell+1,self.cell):
+            #     self.celltally[1,cell] += (self.dx)/self.mu
+            #     self.celltally[3,cell] += (self.dx)/self.mu 
+            #     trialdistance += self.dx/self.mu
             
             if self.x >= self.surfacemesh[self.cell+1]:
                 finalcelldist = self.dx/self.mu
@@ -435,9 +443,12 @@ class MonteCarlo1DSolver:
             self.celltally[1,self.oldcell] += oldcelldist
             self.celltally[3,self.oldcell] += oldcelldist
             
-            for cell in range(self.cell+1,self.oldcell):
-                self.celltally[1,cell] += -(self.dx)/self.mu
-                self.celltally[3,cell] += -(self.dx/self.mu)
+            self.celltally[1,self.cell+1:self.oldcell] += -self.dx/self.mu
+            self.celltally[3,self.cell+1:self.oldcell] += -self.dx/self.mu
+            
+            # for cell in range(self.cell+1,self.oldcell):
+            #     self.celltally[1,cell] += -(self.dx)/self.mu
+            #     self.celltally[3,cell] += -self.dx/self.mu
             
             if self.x <= 0:
                 finalcelldist = -self.dx/self.mu
@@ -474,7 +485,7 @@ class MonteCarlo1DSolver:
                 self.surfacetally[3,-1] += 1
             if self.x <= 0:
                 self.surfacetally[1,0] += 1
-                self.surfacetally[3,0] += 1            
+                self.surfacetally[3,0] += 1           
         
         return(None)                
     
@@ -495,14 +506,11 @@ class MonteCarlo1DSolver:
         
         if np.any((self.particleno) * self.celltally[4:6,:]-self.celltally[0:2,:]**2.0 < 0):
             print(self.particleno,"Negative Variance", 
-                  (self.particleno) * self.celltally[4:6,:]-self.celltally[0:1,:]**2.0,
-                  self.celltally[4:6,:],self.celltally[0:2,:]
+                  np.amin((self.particleno) * self.celltally[4:6,:]-self.celltally[0:2,:]**2.0)
                   )
         
         self.celltally[2:4,:] = 0.0
         self.surfacetally[2:4,:] = 0.0
-        
-        
     
     ## Simplified Simulations Follow
     
@@ -518,8 +526,10 @@ class MonteCarlo1DSolver:
         self.particleno = 0
         self.iteration = 0 
         
+        self.total = self.total*np.abs(mu)
+        
         while self.particleno < self.NP:
-            if self.particleno % 5000 == 0:
+            if self.particleno % (self.NP//10) == 0:
                 print("Particle No.", self.particleno)
                 
             self.particleno += 1
@@ -554,7 +564,7 @@ class MonteCarlo1DSolver:
         self.reflect = True
                         
         while self.particleno < self.NP:
-            if self.particleno % 5000 == 0:
+            if self.particleno % (self.NP//10) == 0:
                 print("Particle No.", self.particleno)
                 
             self.particleno += 1
@@ -590,7 +600,7 @@ class MonteCarlo1DSolver:
         self.iteration = 0 
         
         while self.particleno < self.NP:
-            if self.particleno % 5000 == 0:
+            if self.particleno % (self.NP//10) == 0:
                 print("Particle No.", self.particleno)
             
             self.particleno += 1
@@ -620,10 +630,10 @@ class MonteCarlo1DSolver:
             mu - fixed incident angle
         """
         self.particleno = 0
-        self.iteration = 0 
+        self.iteration = 0
                         
         while self.particleno < self.NP:
-            if self.particleno % 500 == 0:
+            if self.particleno % (self.NP//10) == 0:
                 print("Particle No.", self.particleno)
                 
             self.particleno += 1
@@ -634,6 +644,7 @@ class MonteCarlo1DSolver:
             while self.x >=0 and self.x <= self.totallength and self.rtype == 1:
                 if self.particleiteration == 0:
                     self.mu = self.get_sourceangle()
+                    self.mup.append(self.mu)
                 else:
                     self.mu = self.get_scatterangle()
                 self.cell = self.get_cell()
@@ -647,6 +658,7 @@ class MonteCarlo1DSolver:
                 self.iteration += 1
              
             self.variancetally()
+            
             # if self.particleno % 500 == 0: # Stop calculation early if already small error
             #     self.getmoments()
             #     linf_err = max(np.amax(self.curerr),np.amax(self.sfrerr),np.amax(self.sfderr))
@@ -657,7 +669,7 @@ class MonteCarlo1DSolver:
             #         print("Linf Error ",linf_err)
                                            
         self.getmoments()
-        self.plotmoments()     
+        self.plotmoments()
     
     def getmoments(self):
          
@@ -696,8 +708,12 @@ class MonteCarlo1DSolver:
         self.curerr *= 2 * np.sqrt(1/(self.particleno-1)) * self.total
         
         
-        
     def plotmoments(self):
+        
+        # counts,bins = np.histogram(np.arccos(np.array(self.mup)),bins=20)
+        # plt.stairs(counts,bins)
+        # plt.show()
+        # plt.close()
         
         plt.errorbar(self.cellmesh,self.scalarflux_rates,yerr=self.sfrerr,
                      color="mediumturquoise",label="Scalar Flux Rates",ecolor="mediumturquoise",
@@ -719,6 +735,7 @@ class MonteCarlo1DSolver:
             if not os.path.exists("montecarlo/"):
                 os.mkdir("montecarlo/")
             plt.savefig("montecarlo/flux"+self.name+str(self.NP),bbox_inches="tight")
+        plt.show()
         plt.close()
         
         # print(self.current)
@@ -739,12 +756,8 @@ class MonteCarlo1DSolver:
             if not os.path.exists("montecarlo/"):
                 os.mkdir("montecarlo/")
             plt.savefig("montecarlo/current"+self.name+str(self.NP),bbox_inches="tight")
-        # plt.show()
+        plt.show()
         plt.close()
         
         print("Final Iteration No. ", self.iteration)
             
-        
-        
-        
-        
